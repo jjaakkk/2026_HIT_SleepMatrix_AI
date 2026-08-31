@@ -1,4 +1,17 @@
 /*
 
 !.gitignore
-!.README.md
+!README.md
+!requirements.txt
+!/backend
+!/shared
+!/docs
+!/frontend
+!/tests
+!/dataset
+dataset/*
+!dataset/README.md
+
+# Python-generated files
+__pycache__/
+*.py[cod]

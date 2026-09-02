@@ -8,7 +8,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test \"tests/*.test.ts\"",
-    "demo": "node --experimental-strip-types scripts/quickcheck.ts"
+    "demo": "node --experimental-strip-types scripts/quickcheck.ts",
+    "export:demo": "node --experimental-strip-types scripts/export-demo.ts"
   },
   "dependencies": {
     "vue": "^3.5.13"

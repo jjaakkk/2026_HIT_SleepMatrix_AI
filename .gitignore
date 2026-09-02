@@ -9,8 +9,12 @@
 !/frontend
 !/tests
 !/dataset
-dataset/*
 !dataset/README.md
+
+# Generated or binary artifacts
+/dataset/**/*.png
+/backend/models/*
+!/backend/models/*.metrics.json
 
 # Python-generated files
 __pycache__/

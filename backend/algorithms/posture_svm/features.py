@@ -8,6 +8,13 @@ import numpy as np
 from skimage.feature import hog
 
 from backend.data_utils.contracts import MATRIX_SHAPE
+from backend.data_utils.pressure_processing import prepare_pressure_frame
+from backend.features.pressure import (
+    block_mean,
+    calculate_pressure_statistics,
+    normalized_projections,
+    occupancy_projections,
+)
 
 
 @dataclass(frozen=True)
@@ -31,18 +38,6 @@ class FeatureConfig:
         return cls(**normalized)
 
 
-def _validate_frame(frame: np.ndarray, config: FeatureConfig) -> np.ndarray:
-    array = np.asarray(frame, dtype=np.float32)
-    if array.shape != config.matrix_shape:
-        raise ValueError(
-            f"Pressure matrix shape must be {config.matrix_shape}, received {array.shape}."
-        )
-    if not np.isfinite(array).all():
-        raise ValueError("Pressure matrix contains NaN or infinite values.")
-    # Small negative sensor offsets are not physical pressure and would distort HOG.
-    return np.maximum(array, 0.0)
-
-
 def extract_frame_features(
     frame: np.ndarray,
     config: FeatureConfig | None = None,
@@ -57,15 +52,13 @@ def extract_frame_features(
     """
 
     feature_config = config or FeatureConfig()
-    pressure = _validate_frame(frame, feature_config)
-    positive = pressure[pressure > 0]
-    if positive.size:
-        scale = float(np.percentile(positive, feature_config.pressure_percentile))
-    else:
-        scale = 1.0
-    if not np.isfinite(scale) or scale <= np.finfo(np.float32).eps:
-        scale = 1.0
-    normalized = np.clip(pressure / scale, 0.0, 1.0)
+    prepared = prepare_pressure_frame(
+        frame,
+        matrix_shape=feature_config.matrix_shape,
+        pressure_percentile=feature_config.pressure_percentile,
+    )
+    pressure = prepared.pressure
+    normalized = prepared.normalized
 
     hog_features = hog(
         normalized,
@@ -77,59 +70,17 @@ def extract_frame_features(
         feature_vector=True,
     ).astype(np.float32, copy=False)
 
-    rows, columns = feature_config.matrix_shape
-    # 44x24 -> 11x12 block means.  The documented shape is divisible by 4x2.
-    coarse = normalized.reshape(rows // 4, 4, columns // 2, 2).mean(axis=(1, 3))
-
-    total_normalized = float(normalized.sum())
-    projection_scale = max(total_normalized, np.finfo(np.float32).eps)
-    row_projection = normalized.sum(axis=1) / projection_scale
-    column_projection = normalized.sum(axis=0) / projection_scale
-
-    occupied = normalized >= feature_config.contact_threshold_ratio
-    row_occupancy = occupied.mean(axis=1)
-    column_occupancy = occupied.mean(axis=0)
-
-    y_grid, x_grid = np.indices(feature_config.matrix_shape, dtype=np.float32)
-    if total_normalized > 0:
-        centroid_x = float((normalized * x_grid).sum() / total_normalized) / max(
-            columns - 1, 1
-        )
-        centroid_y = float((normalized * y_grid).sum() / total_normalized) / max(
-            rows - 1, 1
-        )
-        spread_x = float(
-            np.sqrt(
-                (
-                    normalized * (x_grid - centroid_x * (columns - 1)) ** 2
-                ).sum()
-                / total_normalized
-            )
-        ) / max(columns - 1, 1)
-        spread_y = float(
-            np.sqrt(
-                (normalized * (y_grid - centroid_y * (rows - 1)) ** 2).sum()
-                / total_normalized
-            )
-        ) / max(rows - 1, 1)
-    else:
-        centroid_x = centroid_y = spread_x = spread_y = 0.0
-
-    mirror_difference = float(np.mean(np.abs(normalized - np.fliplr(normalized))))
-    global_features = np.asarray(
-        [
-            np.log1p(float(pressure.sum())),
-            np.log1p(float(pressure.max(initial=0.0))),
-            np.log1p(float(positive.mean())) if positive.size else 0.0,
-            float(occupied.mean()),
-            centroid_x,
-            centroid_y,
-            spread_x,
-            spread_y,
-            mirror_difference,
-        ],
-        dtype=np.float32,
+    coarse = block_mean(normalized, block_shape=(4, 2))
+    row_projection, column_projection = normalized_projections(normalized)
+    occupied, row_occupancy, column_occupancy = occupancy_projections(
+        normalized,
+        threshold_ratio=feature_config.contact_threshold_ratio,
     )
+    global_features = calculate_pressure_statistics(
+        pressure,
+        normalized,
+        occupied,
+    ).to_array()
 
     return np.concatenate(
         [

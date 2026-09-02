@@ -2,7 +2,10 @@
 
 Run from the repository root after placing the dataset under ``dataset/``::
 
-    python -m backend.algorithms.posture_svm.train_svm
+    python backend/algorithms/posture_svm/train_svm.py --dataset-dir dataset
+
+Module execution with ``python -m backend.algorithms.posture_svm.train_svm``
+is also supported.
 """
 
 from __future__ import annotations
@@ -11,7 +14,12 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
 from typing import Any
+
+# Allow both `python -m backend...train_svm` and direct script execution.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import joblib
 import numpy as np
@@ -36,7 +44,7 @@ from backend.data_utils.data_loader import (
     validate_subject_coverage,
 )
 
-from .features import FeatureConfig, extract_feature_matrix
+from backend.algorithms.posture_svm.features import FeatureConfig, extract_feature_matrix
 
 
 ARTIFACT_FORMAT = "sleepmatrix-posture-svm"
@@ -271,8 +279,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
-    args = build_argument_parser().parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = build_argument_parser().parse_args(argv)
     try:
         metrics = train_and_evaluate(
             dataset_dir=args.dataset_dir,

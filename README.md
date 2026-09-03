@@ -44,9 +44,13 @@ SleepMatrix_AI/
 │   │   │   ├── train_cnn.py
 │   │   │   └── inference.py
 │   │   │
-│   │   ├── body_partition/                # 【成员 C】身体部位划分
-│   │   │   ├── partition.py
-│   │   │   └── utils.py
+│   │   ├── body_partition/                # 【成员 C】身体部位划分（已实现）
+│   │   │   ├── model_define.py            # 轻量 U-Net 六类分割网络（训练/推理共用）
+│   │   │   ├── partition.py               # region 标注解析、矩形↔掩码互转、指标
+│   │   │   ├── preprocess.py              # 逐帧 99 分位归一化
+│   │   │   ├── demo_data.py               # 标注数据集懒加载（供展示 API 浏览）
+│   │   │   ├── inference.py               # 分割推理接口
+│   │   │   └── README.md
 │   │   │
 │   │   └── weak_area_enhance/             # 【成员 D】弱压力区域增强
 │   │       ├── enhance.py
@@ -54,7 +58,15 @@ SleepMatrix_AI/
 │   │
 │   └── models/                            # 训练产物；按算法命名，代码中不硬编码多份副本
 │       ├── posture_svm.joblib
-│       └── posture_cnn.pth
+│       ├── posture_cnn.pth
+│       └── body_partition.pth             # 成员 C 分割模型（+ .metrics.json）
+│
+├── train/                                 # 【成员 C】身体部位划分训练代码
+│   ├── dataset_prep.py                    # 标注 JSON -> 帧/掩码数组
+│   ├── augment.py                         # 帧-掩码联合增强（不做翻转）
+│   ├── train_partition.py                 # 70/30 随机划分与留人法两种训练协议
+│   ├── visualize.py                       # 报告用对比图与训练曲线
+│   └── README.md
 │
 ├── frontend/                              # 【成员 E】只通过共享契约和 HTTP API 获取数据
 │   ├── index.html
@@ -66,7 +78,9 @@ SleepMatrix_AI/
 │   │   ├── heatmap.js
 │   │   ├── dashboard.js
 │   │   └── airbag_anim.js
-│   └── assets/
+│   ├── assets/
+│   └── body-partition/                    # 【成员 C】区域划分展示页（/body-partition/）
+│       └── index.html                     # 自包含页面：睡姿切换、逐帧浏览、预测/真值叠加
 │
 ├── dataset/                               # 本地数据，默认不提交 Git
 │   ├── raw/                               # 老师提供的原始文件，只读保存
@@ -82,5 +96,6 @@ SleepMatrix_AI/
 └── tests/
     ├── test_data_utils.py                 # 公共契约、解析和增强测试
     ├── test_posture_svm.py                # 成员 A 算法测试
+    ├── test_body_partition.py             # 成员 C 标注解析、掩码、指标与增强测试
     └── test_api.py                        # HTTP 集成测试
 ```

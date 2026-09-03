@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>身体部位区域划分 · SleepMatrix</title>
+<style>
+  :root {
+    --ink: #1d2129;
+    --ink-2: #4e5969;
+    --ink-3: #86909c;
+    --accent: #165dff;
+    --bg: #ffffff;
+    --bg-soft: #f7f8fa;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 28px 32px 40px; }
+
+  header.top { display: flex; align-items: baseline; gap: 18px; }
+  header.top h1 { font-size: 20px; font-weight: 600; letter-spacing: .5px; }
+  header.top .sub { font-size: 12.5px; color: var(--ink-3); }
+
+  .metrics-strip {
+    display: flex; gap: 34px; margin-top: 14px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--ink-2);
+  }
+  .metrics-strip b { font-size: 17px; font-weight: 600; color: var(--ink); margin-right: 6px; }
+  .metrics-strip .ok b { color: #00b42a; }
+
+  .posture-tabs { display: flex; gap: 6px; margin: 22px 0 18px; }
+  .posture-tabs button {
+    border: none; background: transparent; padding: 7px 16px; font-size: 13.5px;
+    color: var(--ink-2); cursor: pointer; border-radius: 999px;
+    transition: background .18s ease, color .18s ease;
+  }
+  .posture-tabs button:hover { background: var(--bg-soft); }
+  .posture-tabs button.active { background: var(--ink); color: #fff; }
+
+  .stage { display: flex; gap: 44px; align-items: flex-start; }
+  .canvas-wrap { flex: 0 0 auto; }
+  canvas#heat { width: 336px; height: 616px; border-radius: 10px; background: #0b0b16; }
+  .canvas-caption {
+    margin-top: 10px; font-size: 12px; color: var(--ink-3);
+    display: flex; justify-content: space-between; width: 336px;
+  }
+
+  .controls { flex: 1 1 auto; min-width: 300px; padding-top: 4px; }
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block; font-size: 12px; color: var(--ink-3); margin-bottom: 7px; letter-spacing: 1px;
+  }
+  select {
+    width: 100%; padding: 8px 10px; font-size: 13.5px; color: var(--ink);
+    border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; outline: none;
+    transition: border-color .15s ease;
+  }
+  select:focus { border-color: var(--accent); }
+
+  input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+  .frame-row { display: flex; align-items: center; gap: 12px; }
+  .frame-row input { flex: 1; }
+  .frame-no { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink-2); width: 64px; text-align: right; }
+
+  .btn-row { display: flex; gap: 10px; margin-top: 4px; }
+  .btn {
+    border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; cursor: pointer;
+    background: var(--bg-soft); color: var(--ink-2); transition: all .18s ease;
+  }
+  .btn:hover { background: #eceef2; }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #0e4fd6; }
+
+  .seg { display: inline-flex; background: var(--bg-soft); border-radius: 999px; padding: 3px; }
+  .seg button {
+    border: none; background: transparent; padding: 6px 14px; font-size: 12.5px;
+    color: var(--ink-2); border-radius: 999px; cursor: pointer; transition: all .18s ease;
+  }
+  .seg button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.10); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 6px; }
+  .legend .item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); }
+  .legend .dot { width: 11px; height: 11px; border-radius: 3.5px; }
+
+  .acc-readout { font-size: 13px; color: var(--ink-2); margin-top: 2px; min-height: 20px; }
+  .acc-readout b { color: var(--ink); font-weight: 600; }
+
+  .status-line { font-size: 12px; color: var(--ink-3); margin-top: 26px; }
+  .status-line.warn { color: #ff7d00; }
+
+  .skeleton { color: var(--ink-3); font-size: 13px; padding: 60px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <h1>身体部位区域划分</h1>
+    <span class="sub">44×24 压力矩阵 · 六类语义分割（背景 / 肩 / 背 / 腰 / 臀 / 大腿）</span>
+  </header>
+
+  <div class="metrics-strip" id="metricsStrip"></div>
+
+  <nav class="posture-tabs" id="postureTabs"></nav>
+
+  <div class="stage">
+    <div class="canvas-wrap">
+      <canvas id="heat" width="336" height="616"></canvas>
+      <div class="canvas-caption">
+        <span id="captionLeft">—</span>
+        <span id="captionRight">44×24</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="field">
+        <label>受试者</label>
+        <select id="subjectSelect"></select>
+      </div>
+      <div class="field">
+        <label>动作</label>
+        <select id="actionSelect"></select>
+      </div>
+      <div class="field">
+        <label>帧</label>
+        <div class="frame-row">
+          <input type="range" id="frameSlider" min="0" max="0" value="0">
+          <span class="frame-no" id="frameNo">0 / 0</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>叠加显示</label>
+        <div class="seg" id="viewSeg">
+          <button data-view="both" class="active">预测 + 真值</button>
+          <button data-view="pred">仅预测</button>
+          <button data-view="gt">仅真值</button>
+          <button data-view="none">纯热力</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>区域图例</label>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="acc-readout" id="accReadout"></div>
+      <div class="btn-row">
+        <button class="btn primary" id="playBtn">播放</button>
+        <button class="btn" id="prevBtn">上一帧</button>
+        <button class="btn" id="nextBtn">下一帧</button>
+      </div>
+      <div class="status-line" id="statusLine"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ---------- turbo colormap (polynomial approximation) ----------
+const TURBO = (() => {
+  const table = [];
+  for (let i = 0; i < 256; i++) {
+    const x = i / 255;
+    const r = 34.61 + x * (1172.33 + x * (-10793.56 + x * (33300.12 + x * (-38394.49 + x * 14825.05))));
+    const g = 23.31 + x * (557.33 + x * (1225.33 + x * (-3574.96 + x * (1073.77 + x * 707.56))));
+    const b = 27.2 + x * (3211.1 + x * (-15327.97 + x * (27814.0 + x * (-22569.18 + x * 6838.66))));
+    table.push([Math.max(0, Math.min(255, r)), Math.max(0, Math.min(255, g)), Math.max(0, Math.min(255, b))]);
+  }
+  return table;
+})();
+
+const REGION_COLORS = ["#165dff", "#00b42a", "#ff7d00", "#f53f3f", "#722ed1"];
+const REGION_NAMES = ["肩部", "背部", "腰部", "臀部", "大腿部"];
+const POSTURES = [
+  { id: 0, name: "仰卧" },
+  { id: 1, name: "俯卧" },
+  { id: 2, name: "左侧卧" },
+  { id: 3, name: "右侧卧" },
+];
+
+const ROWS = 44, COLS = 24;
+const canvas = document.getElementById("heat");
+const ctx = canvas.getContext("2d");
+const off = document.createElement("canvas");
+off.width = COLS; off.height = ROWS;
+const offCtx = off.getContext("2d");
+const offImg = offCtx.createImageData(COLS, ROWS);
+
+const state = {
+  catalog: null,
+  posture: 0,
+  subject: null,
+  action: null,
+  frame: 0,
+  frameCount: 0,
+  view: "both",
+  sample: null,
+  playing: false,
+  playTimer: null,
+  modelReady: true,
+};
+
+const $ = (id) => document.getElementById(id);
+
+async function fetchJson(url, options) {
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).message || detail; } catch (e) { /* ignore */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// ---------- rendering ----------
+function renderHeat(matrix) {
+  let max = 0;
+  for (const row of matrix) for (const v of row) if (v > max) max = v;
+  const scale = max > 0 ? 255 / max : 0;
+  const data = offImg.data;
+  let p = 0;
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const c = TURBO[Math.min(255, Math.round(matrix[y][x] * scale))];
+      data[p++] = c[0]; data[p++] = c[1]; data[p++] = c[2]; data[p++] = 255;
+    }
+  }
+  offCtx.putImageData(offImg, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+}
+
+function cellW() { return canvas.width / COLS; }
+function cellH() { return canvas.height / ROWS; }
+
+function overlayMask(mask, alpha) {
+  const cw = cellW(), ch = cellH();
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const cls = mask[y][x];
+      if (cls > 0) {
+        ctx.fillStyle = REGION_COLORS[cls - 1];
+        ctx.fillRect(x * cw, y * ch, cw + 0.5, ch + 0.5);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawRegions(regions, dashed) {
+  const cw = cellW(), ch = cellH();
+  ctx.save();
+  regions.forEach((rect, i) => {
+    if (!rect) return;
+    ctx.strokeStyle = REGION_COLORS[i];
+    ctx.lineWidth = 2;
+    ctx.setLineDash(dashed ? [6, 4] : []);
+    ctx.strokeRect(rect.x1 * cw, rect.y1 * ch, (rect.x2 - rect.x1) * cw, (rect.y2 - rect.y1) * ch);
+    ctx.setLineDash([]);
+    ctx.font = "600 13px 'PingFang SC', 'Microsoft YaHei', sans-serif";
+    ctx.fillStyle = REGION_COLORS[i];
+    const label = rect.name_zh || REGION_NAMES[i];
+    const tx = Math.min(rect.x1 * cw + 4, canvas.width - 44);
+    const ty = Math.max(rect.y1 * ch - 6, 14);
+    ctx.fillText(label, tx, ty);
+  });
+  ctx.restore();
+}
+
+function rectsFromMask(mask) {
+  const rects = [];
+  for (let cls = 1; cls <= 5; cls++) {
+    let x1 = COLS, x2 = -1, y1 = ROWS, y2 = -1;
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+      if (mask[y][x] === cls) {
+        if (x < x1) x1 = x; if (x > x2) x2 = x;
+        if (y < y1) y1 = y; if (y > y2) y2 = y;
+      }
+    }
+    rects.push(x2 >= 0 ? { x1, x2: x2 + 1, y1, y2: y2 + 1, name_zh: REGION_NAMES[cls - 1] } : null);
+  }
+  return rects;
+}
+
+function maskAccuracy(pred, gt) {
+  let correct = 0;
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (pred[y][x] === gt[y][x]) correct++;
+  return correct / (ROWS * COLS);
+}
+
+function render() {
+  const s = state.sample;
+  if (!s) return;
+  renderHeat(s.pressure_matrix);
+  const showGt = state.view === "both" || state.view === "gt";
+  const showPred = (state.view === "both" || state.view === "pred") && s.predicted_mask;
+  if (state.view === "none") { /* pure heatmap */ }
+  if (showPred) overlayMask(s.predicted_mask, state.view === "pred" ? 0.42 : 0.30);
+  if (showGt) drawRegions(rectsFromMask(s.ground_truth_mask), false);
+  if (showPred && state.view === "both") drawRegions(s.predicted_regions || rectsFromMask(s.predicted_mask), true);
+  if (showPred && state.view === "pred") drawRegions(s.predicted_regions || rectsFromMask(s.predicted_mask), false);
+
+  $("captionLeft").textContent = `${s.subject} · 动作 ${s.action} · 第 ${s.frame} 帧`;
+  if (s.predicted_mask) {
+    const acc = maskAccuracy(s.predicted_mask, s.ground_truth_mask);
+    $("accReadout").innerHTML = `当前帧逐像素准确率 <b>${(acc * 100).toFixed(2)}%</b>（实线=真值，虚线=预测）`;
+  } else {
+    $("accReadout").textContent = "模型未加载，仅显示真值标注";
+  }
+}
+
+// ---------- data loading ----------
+async function loadSample() {
+  const { subject, action, frame } = state;
+  const data = await fetchJson(`/api/body-partition/sample?subject=${encodeURIComponent(subject)}&action=${action}&frame=${frame}`);
+  state.sample = data;
+  render();
+}
+
+function rebuildActions() {
+  const actions = state.catalog[state.subject];
+  const list = Object.keys(actions).map(Number).filter((a) => actions[String(a)].sleep_pos === state.posture).sort((a, b) => a - b);
+  const select = $("actionSelect");
+  select.innerHTML = "";
+  for (const a of list) {
+    const opt = document.createElement("option");
+    opt.value = a; opt.textContent = `动作 ${a}`;
+    select.appendChild(opt);
+  }
+  state.action = list[0];
+  state.frame = 0;
+  state.frameCount = actions[String(state.action)].frames;
+  syncFrameUi();
+}
+
+function syncFrameUi() {
+  $("frameSlider").max = Math.max(0, state.frameCount - 1);
+  $("frameSlider").value = state.frame;
+  $("frameNo").textContent = `${state.frame} / ${state.frameCount - 1}`;
+}
+
+function stopPlaying() {
+  state.playing = false;
+  if (state.playTimer) { clearInterval(state.playTimer); state.playTimer = null; }
+  $("playBtn").textContent = "播放";
+}
+
+async function refreshSample() {
+  try { await loadSample(); } catch (err) { setStatus(`加载样本失败：${err.message}`, true); }
+}
+
+function setStatus(text, warn) {
+  const el = $("statusLine");
+  el.textContent = text;
+  el.className = warn ? "status-line warn" : "status-line";
+}
+
+// ---------- init ----------
+async function init() {
+  // legend
+  const legend = $("legend");
+  REGION_NAMES.forEach((name, i) => {
+    const item = document.createElement("span");
+    item.className = "item";
+    item.innerHTML = `<span class="dot" style="background:${REGION_COLORS[i]}"></span>${name}`;
+    legend.appendChild(item);
+  });
+
+  // posture tabs
+  const tabs = $("postureTabs");
+  POSTURES.forEach((p) => {
+    const btn = document.createElement("button");
+    btn.textContent = p.name;
+    if (p.id === state.posture) btn.classList.add("active");
+    btn.onclick = () => {
+      stopPlaying();
+      state.posture = p.id;
+      tabs.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      rebuildActions();
+      refreshSample();
+    };
+    tabs.appendChild(btn);
+  });
+
+  // metrics strip
+  try {
+    const doc = await fetchJson("/api/body-partition/metrics");
+    const m = doc.metrics || {};
+    const pos = m.pixel_accuracy_by_position || {};
+    const posKeys = ["supine", "prone", "left_lateral", "right_lateral"];
+    const posText = POSTURES.map((p, i) => {
+      const v = pos[posKeys[i]];
+      return `${p.name} ${v !== undefined ? (100 * v).toFixed(1) + "%" : "—"}`;
+    }).join(" · ");
+    const se = doc.subject_eval || {};
+    const seText = se.pixel_accuracy != null
+      ? `<span class="ok"><b>${(100 * se.pixel_accuracy).toFixed(2)}%</b>新用户像素准确率</span>`
+      : "";
+    $("metricsStrip").innerHTML =
+      `<span class="ok"><b>${(100 * (m.pixel_accuracy || 0)).toFixed(2)}%</b>验证集像素准确率</span>` +
+      seText +
+      `<span><b>${(100 * (m.mean_iou || 0)).toFixed(1)}%</b>mIoU</span>` +
+      `<span><b>${(m.mean_boundary_mae || 0).toFixed(2)}</b>边界平均误差（行）</span>` +
+      `<span>${posText}</span>`;
+  } catch (err) {
+    $("metricsStrip").innerHTML = `<span>训练指标暂不可用（请先运行训练脚本）</span>`;
+  }
+
+  // health
+  try {
+    const health = await fetchJson("/api/health");
+    state.modelReady = !!(health.body_partition && health.body_partition.model_available);
+    if (!state.modelReady) setStatus("提示：未检测到训练好的模型，当前仅显示真值标注。", true);
+  } catch (err) { /* ignore */ }
+
+  // catalog
+  try {
+    state.catalog = await fetchJson("/api/body-partition/catalog");
+  } catch (err) {
+    setStatus(`数据集不可用：${err.message}`, true);
+    return;
+  }
+
+  const subjects = Object.keys(state.catalog);
+  const select = $("subjectSelect");
+  subjects.forEach((s) => {
+    const opt = document.createElement("option");
+    opt.value = s; opt.textContent = s;
+    select.appendChild(opt);
+  });
+  state.subject = subjects[0];
+  rebuildActions();
+  await refreshSample();
+
+  select.onchange = () => { stopPlaying(); state.subject = select.value; rebuildActions(); refreshSample(); };
+  $("actionSelect").onchange = (e) => {
+    stopPlaying();
+    state.action = Number(e.target.value);
+    state.frame = 0;
+    state.frameCount = state.catalog[state.subject][String(state.action)].frames;
+    syncFrameUi();
+    refreshSample();
+  };
+  $("frameSlider").oninput = (e) => {
+    state.frame = Number(e.target.value);
+    syncFrameUi();
+    refreshSample();
+  };
+  $("prevBtn").onclick = () => { stopPlaying(); if (state.frame > 0) { state.frame--; syncFrameUi(); refreshSample(); } };
+  $("nextBtn").onclick = () => { stopPlaying(); if (state.frame < state.frameCount - 1) { state.frame++; syncFrameUi(); refreshSample(); } };
+  $("playBtn").onclick = () => {
+    if (state.playing) { stopPlaying(); return; }
+    state.playing = true;
+    $("playBtn").textContent = "暂停";
+    state.playTimer = setInterval(() => {
+      state.frame = (state.frame + 1) % state.frameCount;
+      syncFrameUi();
+      refreshSample();
+    }, 160);
+  };
+  document.querySelectorAll("#viewSeg button").forEach((btn) => {
+    btn.onclick = () => {
+      document.querySelectorAll("#viewSeg button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.view = btn.dataset.view;
+      render();
+    };
+  });
+}
+
+init();
+</script>
+</body>
+</html>

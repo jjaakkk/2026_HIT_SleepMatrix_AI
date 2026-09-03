@@ -8,6 +8,7 @@
 !/docs
 !/frontend
 !/tests
+!/train
 !/dataset
 dataset/*
 !dataset/README.md

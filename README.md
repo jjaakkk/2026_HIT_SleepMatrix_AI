@@ -99,3 +99,37 @@ SleepMatrix_AI/
     ├── test_body_partition.py             # 成员 C 标注解析、掩码、指标与增强测试
     └── test_api.py                        # HTTP 集成测试
 ```
+
+## 安装与启动
+
+```powershell
+# 1. 创建虚拟环境并安装依赖（推荐在项目根目录）
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+
+# 2. 放置数据：dataset/raw/ 下放入官方数据文件（见 dataset/README.md）
+
+# 3. 启动后端（默认 http://127.0.0.1:5000）
+.venv\Scripts\python.exe -m backend.app
+```
+
+### 身体部位区域划分（成员 C）
+
+```powershell
+# 训练（可选，模型工件已提交 backend/models/body_partition.pth）
+.venv\Scripts\python.exe -m train.dataset_prep
+.venv\Scripts\python.exe -m train.train_partition --split random    # 70/30 生产模型
+.venv\Scripts\python.exe -m train.train_partition --split subject   # 留人法新用户评估
+
+# 展示页：启动后端后访问
+#   http://127.0.0.1:5000/body-partition/
+```
+
+详见 `train/README.md`、`backend/algorithms/body_partition/README.md`
+与实验报告 `docs/reports/body_partition_report.md`。
+
+### 测试
+
+```powershell
+.venv\Scripts\python.exe -m unittest discover -s tests
+```

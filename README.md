@@ -39,4 +39,4 @@ npm run capture  # 无头浏览器截图验证（需先启动 dev/preview 服务
 ## 开发路线
 
 Phase 1 数据读取 ✅ → Phase 2 静态热力图 ✅ → Phase 3 帧动画 ✅ → Phase 4 实时指标与曲线 ✅ →
-Phase 5 区域分析 → Phase 6 完整 UI → Phase 7 气囊模块 → Phase 8 最终 Demo
+Phase 5 区域分析 ✅ → Phase 6 完整 UI → Phase 7 气囊模块 → Phase 8 最终 Demo

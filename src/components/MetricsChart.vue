@@ -9,6 +9,8 @@ const props = defineProps<{
   history: FrameMetrics[];
   /** 当前回放帧号（播放头） */
   frameIdx: number;
+  /** 追加曲线（如选定区域的逐帧平均压力），左轴 */
+  extraSeries?: { label: string; color: string; values: number[] }[];
 }>();
 
 interface SeriesDef {
@@ -68,6 +70,12 @@ function draw() {
       }
     }
   }
+  for (const es of props.extraSeries ?? []) {
+    for (const v of es.values) {
+      if (v < lMin) lMin = v;
+      if (v > lMax) lMax = v;
+    }
+  }
   const lTicks = niceTicks(Math.min(lMin, 0), Math.max(lMax, 1), 5);
   const rTicks = niceTicks(Math.min(rMin, 0), Math.max(rMax, 1), 5);
 
@@ -118,6 +126,22 @@ function draw() {
     }
     ctx.stroke();
   }
+  // 追加曲线（如选定区域）
+  for (const es of props.extraSeries ?? []) {
+    if (es.values.length === 0) continue;
+    ctx.strokeStyle = es.color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    for (let i = 0; i < Math.min(es.values.length, n); i++) {
+      const x = xOf(i);
+      const y = yOf(es.values[i], lTicks);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   // 播放头
   const cx = xOf(props.frameIdx);
@@ -136,12 +160,28 @@ function draw() {
   let lx = PAD.left;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  for (const s of series) {
+  const allSeries = [...series];
+  const extra = props.extraSeries ?? [];
+  for (const s of allSeries) {
     ctx.fillStyle = s.color;
     ctx.fillRect(lx, 4, 10, 3);
     ctx.fillStyle = '#8b949e';
     ctx.fillText(s.label, lx + 14, 5.5);
     lx += 14 + ctx.measureText(s.label).width + 14;
+  }
+  for (const es of extra) {
+    ctx.save();
+    ctx.setLineDash([3, 2]);
+    ctx.strokeStyle = es.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(lx, 5.5);
+    ctx.lineTo(lx + 10, 5.5);
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#8b949e';
+    ctx.fillText(es.label, lx + 14, 5.5);
+    lx += 14 + ctx.measureText(es.label).width + 14;
   }
 }
 

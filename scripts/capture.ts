@@ -22,6 +22,10 @@ const scenarios: [string, string][] = [
   ['08-动态过程', '#type=dynamic&frame=80&mode=smooth&scale=fixed250'],
   ['11-指标卡与曲线-仰卧', '#type=static&action=1&frame=10&mode=smooth&scale=auto'],
   ['12-指标卡与曲线-动态播放中', '#type=dynamic&frame=15&mode=smooth&scale=auto&autoplay=1'],
+  ['13-区域叠加-仰卧', '#type=static&action=1&frame=8&mode=smooth&scale=auto'],
+  ['14-区域叠加-左侧卧', '#type=static&action=10&frame=8&mode=smooth&scale=auto'],
+  ['15-区域选中-臀部', '#type=static&action=1&frame=10&mode=smooth&scale=auto&region=3'],
+  ['16-小腿部标注-SAI', '#type=static&action=1&frame=8&mode=smooth&scale=auto&calf=1'],
 ];
 
 const browser = await puppeteer.launch({ headless: 'shell' });

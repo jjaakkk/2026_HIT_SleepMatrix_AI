@@ -3,10 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import HeatmapCanvas from './components/HeatmapCanvas.vue';
 import MetricCards from './components/MetricCards.vue';
 import MetricsChart from './components/MetricsChart.vue';
+import RegionRanking from './components/RegionRanking.vue';
 import { turboColor } from './render/heatmap.ts';
 import type { HeatmapMode, ScaleMode } from './render/heatmap.ts';
 import { SLEEP_POS_NAMES } from './core/types.ts';
 import { computeMetrics, metricsHistory } from './core/metrics.ts';
+import { parseRegion, parseSpine } from './core/parsers/annotations.ts';
+import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stats.ts';
 import { PlaybackController } from './core/playback.ts';
 
 interface DemoAction {
@@ -101,6 +104,49 @@ const bgForMetrics = computed<ArrayLike<number> | null>(() =>
 // 逐帧指标历史（回放顺序），用于指标卡 sparkline 与时间曲线
 const history = computed(() => metricsHistory(framesList.value, bgForMetrics.value, 20));
 
+// 区域与脊柱标注（当前动作；同一动作内标注基本恒定）
+const regions = computed(() =>
+  sourceType.value === 'static' && currentAction.value?.region
+    ? parseRegion(currentAction.value.region)
+    : null,
+);
+const spine = computed(() =>
+  sourceType.value === 'static' && currentAction.value?.spine
+    ? parseSpine(currentAction.value.spine)
+    : null,
+);
+
+const showRegions = ref(true);
+const showSpine = ref(true);
+const showCalf = ref(false);
+const selectedRegion = ref<number | null>(null);
+const hoverRegion = ref<number | null>(null);
+
+// 当前帧区域统计（按平均净压力降序）
+const regionStats = computed(() => {
+  if (!regions.value || !currentFrame.value.length) return [];
+  return regionStatsAll(currentFrame.value, bgForMetrics.value, regions.value, 20);
+});
+
+// 选定区域的逐帧平均压力曲线
+const regionCurve = computed(() => {
+  if (selectedRegion.value === null || !regions.value) return [];
+  const rg = regions.value[selectedRegion.value];
+  if (!rg?.valid) return [];
+  const bg = bgForMetrics.value;
+  return framesList.value.map((f) => regionMetrics(f, bg, rg, 20).meanNet);
+});
+const selectedRegionName = computed(() => {
+  if (selectedRegion.value === null || !regions.value) return '';
+  const rg = regions.value[selectedRegion.value];
+  return rg?.valid ? rg.name : '';
+});
+const selectedRegionColor = computed(() => {
+  if (selectedRegion.value === null || !regions.value) return '#8b949e';
+  const rg = regions.value[selectedRegion.value];
+  return rg?.valid ? (REGION_COLORS[rg.name] ?? '#8b949e') : '#8b949e';
+});
+
 // rAF 驱动
 let rafId = 0;
 let lastTs = 0;
@@ -163,6 +209,12 @@ function applyHash() {
   }
   if (h.get('mode') === 'grid' || h.get('mode') === 'weak') mode.value = h.get('mode') as HeatmapMode;
   if (h.get('scale') === 'auto' || h.get('scale') === 'fixed500') scale.value = h.get('scale') as ScaleMode;
+  if (h.get('calf') === '1') showCalf.value = true;
+  const rgRaw = h.get('region');
+  if (rgRaw !== null) {
+    const rg = Number(rgRaw);
+    if (!Number.isNaN(rg) && rg >= 0 && rg <= 5) selectedRegion.value = rg;
+  }
   rebuildController();
   const f = Number(h.get('frame'));
   if (!Number.isNaN(f)) controller.value?.seek(f);
@@ -194,13 +246,14 @@ onMounted(async () => {
 watch(() => frameCount.value, (n) => {
   if (frameIdx.value >= n) frameIdx.value = n - 1;
 });
+watch([sourceType, actionIdx], () => (selectedRegion.value = null));
 
 const phases = [
   { id: 1, name: '读取数据', done: true },
   { id: 2, name: '静态热力图', done: true },
   { id: 3, name: '帧动画', done: true },
   { id: 4, name: '实时指标与曲线', done: true },
-  { id: 5, name: '区域分析', done: false },
+  { id: 5, name: '区域分析', done: true },
   { id: 6, name: '完整大屏 UI', done: false },
   { id: 7, name: '气囊模块', done: false },
   { id: 8, name: '最终 Demo', done: false },
@@ -213,7 +266,7 @@ const phases = [
       <h1>智能床垫实时监测系统</h1>
       <div class="badges">
         <span class="badge replay">● 回放 · 本地历史数据</span>
-        <span class="badge">v0.4.0 · Phase 4</span>
+        <span class="badge">v0.5.0 · Phase 5</span>
       </div>
     </header>
 
@@ -259,6 +312,14 @@ const phases = [
             </button>
           </div>
         </div>
+        <div class="field">
+          <span>标注叠加</span>
+          <div class="checks">
+            <label><input type="checkbox" v-model="showRegions" /> 区域框</label>
+            <label><input type="checkbox" v-model="showSpine" /> 脊柱线</label>
+            <label><input type="checkbox" v-model="showCalf" /> 小腿部<span class="tiny">(仅3人有标注)</span></label>
+          </div>
+        </div>
         <div class="legend">
           <canvas ref="legendCanvas" class="legend-canvas"></canvas>
           <div class="legend-ticks">
@@ -278,7 +339,15 @@ const phases = [
             :mode="mode"
             :scale="scale"
             :max-height="heatmapMaxHeight"
+            :regions="regions"
+            :spine="spine"
+            :show-regions="showRegions"
+            :show-spine="showSpine"
+            :show-calf="showCalf"
+            :selected-region="selectedRegion"
             @hover="hoverCell = $event"
+            @region-hover="hoverRegion = $event"
+            @region-select="selectedRegion = $event"
           />
           <div class="controls">
             <button class="ctl" title="上一帧" @click="stepPrev">⏮</button>
@@ -312,6 +381,8 @@ const phases = [
       <aside class="panel right">
         <h2>实时压力指标</h2>
         <MetricCards :metrics="metrics" :history="history" />
+        <h2 style="margin-top: 18px">区域压力排行<span class="sub">（平均净压力）</span></h2>
+        <RegionRanking :stats="regionStats" :selected="selectedRegion" :hovered="hoverRegion" @select="selectedRegion = $event" />
         <h2 style="margin-top: 18px">当前帧</h2>
         <dl class="info">
           <div><dt>睡姿</dt><dd>{{ sleepPosName }}</dd></div>
@@ -335,7 +406,15 @@ const phases = [
 
     <section class="chart-panel">
       <h2>压力指标趋势（随回放实时更新）</h2>
-      <MetricsChart :history="history" :frame-idx="frameIdx" />
+      <MetricsChart
+        :history="history"
+        :frame-idx="frameIdx"
+        :extra-series="
+          selectedRegion !== null && regionCurve.length
+            ? [{ label: `${selectedRegionName}平均压力`, color: selectedRegionColor, values: regionCurve }]
+            : []
+        "
+      />
     </section>
 
     <footer class="footer">
@@ -348,7 +427,7 @@ const phases = [
 .shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
 }
 .topbar {
   display: flex;
@@ -381,9 +460,11 @@ const phases = [
   flex: 1;
   display: grid;
   grid-template-columns: 240px 1fr 260px;
+  grid-template-rows: minmax(0, 1fr);
   gap: 16px;
   padding: 16px 20px;
   min-height: 0;
+  overflow: hidden;
 }
 .panel {
   background: var(--panel);
@@ -391,6 +472,7 @@ const phases = [
   border-radius: 10px;
   padding: 16px;
   overflow: auto;
+  min-height: 0;
 }
 .panel h2 {
   font-size: 15px;
@@ -436,6 +518,32 @@ select {
   color: var(--accent);
   border-color: var(--accent);
 }
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+.checks label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.checks input {
+  accent-color: var(--accent);
+}
+.tiny {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 6px;
+}
 .legend-canvas {
   width: 100%;
   height: 14px;
@@ -454,6 +562,7 @@ select {
   align-items: center;
   justify-content: center;
   min-height: 0;
+  overflow: auto;
 }
 .heatmap-panel {
   width: 100%;

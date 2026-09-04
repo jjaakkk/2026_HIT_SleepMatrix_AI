@@ -4,10 +4,11 @@ import HeatmapCanvas from './components/HeatmapCanvas.vue';
 import MetricCards from './components/MetricCards.vue';
 import MetricsChart from './components/MetricsChart.vue';
 import RegionRanking from './components/RegionRanking.vue';
+import SleepPoseCard from './components/SleepPoseCard.vue';
 import { turboColor } from './render/heatmap.ts';
 import type { HeatmapMode, ScaleMode } from './render/heatmap.ts';
 import { SLEEP_POS_NAMES } from './core/types.ts';
-import { computeMetrics, metricsHistory } from './core/metrics.ts';
+import { computeMetrics, metricsHistory, isBedOccupied, poseDuration } from './core/metrics.ts';
 import { parseRegion, parseSpine } from './core/parsers/annotations.ts';
 import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stats.ts';
 import { PlaybackController } from './core/playback.ts';
@@ -32,7 +33,8 @@ interface DemoData {
 }
 
 const data = ref<DemoData | null>(null);
-const person = ref<DemoPerson | null>(null);
+const personIdx = ref(0);
+const person = computed(() => data.value?.people[personIdx.value] ?? null);
 const sourceType = ref<'static' | 'dynamic'>('static');
 const actionIdx = ref(0);
 const mode = ref<HeatmapMode>('smooth');
@@ -49,9 +51,28 @@ const sleepPosName = computed(() =>
   sourceType.value === 'dynamic'
     ? '动态过程'
     : currentAction.value
-      ? (SLEEP_POS_NAMES[currentAction.value.sleepPos] ?? '未知')
+      ? currentAction.value.action === 0
+        ? metrics.value && !isBedOccupied(metrics.value)
+          ? '离床 · 无人'
+          : '在床'
+        : (SLEEP_POS_NAMES[currentAction.value.sleepPos] ?? '未知')
       : '-',
 );
+
+// 睡姿状态持续时长（回放顺序内连续同状态帧数）
+const poseKeys = computed(() =>
+  history.value.map((m) => {
+    if (sourceType.value === 'dynamic') return '动态过程';
+    if (currentAction.value?.action === 0) return isBedOccupied(m) ? '在床' : '离床 · 无人';
+    return SLEEP_POS_NAMES[currentAction.value?.sleepPos ?? -1] ?? '未知';
+  }),
+);
+const poseDurationFrames = computed(() => poseDuration(poseKeys.value, frameIdx.value));
+
+function actionLabel(a: DemoAction): string {
+  if (a.action === 0) return '空载（无人）';
+  return `Action ${a.action} · ${SLEEP_POS_NAMES[a.sleepPos] ?? ''}`;
+}
 const sourceLabel = computed(() =>
   sourceType.value === 'dynamic'
     ? `${data.value?.dynamic.person ?? ''} · 动态过程`
@@ -83,6 +104,16 @@ const currentFrame = computed(
       : currentAction.value?.frames[frameIdx.value]) ?? new Float32Array(0),
 );
 
+// 显示帧 = 扣除该人空载背景后的净压力（背景噪声在热力图上自然归零，"离床"画面即全黑）
+const displayFrame = computed(() => {
+  const raw = currentFrame.value;
+  const bg = bgForMetrics.value;
+  if (!bg) return raw;
+  const out = new Float32Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = Math.max(raw[i] - bg[i], 0);
+  return out;
+});
+
 const metrics = computed(() => {
   if (!currentFrame.value.length || !person.value) return null;
   return computeMetrics(currentFrame.value, bgForMetrics.value, 20);
@@ -90,7 +121,7 @@ const metrics = computed(() => {
 
 // 视口高度 → 热力图最大高度（保证底部曲线图在 900px 高视口内也可见）
 const viewportH = ref(window.innerHeight);
-const heatmapMaxHeight = computed(() => Math.max(260, viewportH.value - 480));
+const heatmapMaxHeight = computed(() => Math.max(260, viewportH.value - 450));
 
 // 当前数据源的全部帧 + 对应空载背景（动态帧用 wzh 自己的背景）
 const framesList = computed<ArrayLike<number>[]>(() =>
@@ -181,6 +212,11 @@ function selectAction(i: number) {
   actionIdx.value = i;
   rebuildController();
 }
+function selectPerson(i: number) {
+  personIdx.value = i;
+  actionIdx.value = 0;
+  rebuildController();
+}
 function selectSource(t: 'static' | 'dynamic') {
   sourceType.value = t;
   rebuildController();
@@ -198,10 +234,15 @@ const scaleOptions: { value: ScaleMode; label: string }[] = [
 ];
 const speedOptions = [0.5, 1, 2, 4];
 
-// URL hash 状态（便于截图/演示直链）：#type=dynamic&action=2&frame=10&mode=grid&scale=auto
+// URL hash 状态（便于截图/演示直链）：#type=dynamic&person=wzh&action=2&frame=10&mode=grid&scale=auto
 function applyHash() {
   const h = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
   if (h.get('type') === 'dynamic') sourceType.value = 'dynamic';
+  const pn = h.get('person');
+  if (pn && data.value) {
+    const pi = data.value.people.findIndex((p) => p.name === pn);
+    if (pi >= 0) personIdx.value = pi;
+  }
   const a = Number(h.get('action'));
   if (!Number.isNaN(a) && person.value) {
     const idx = person.value.actions.findIndex((x) => x.action === a);
@@ -227,7 +268,6 @@ onMounted(async () => {
   window.addEventListener('resize', () => (viewportH.value = window.innerHeight));
   const res = await fetch(`${import.meta.env.BASE_URL}data/demo.json`);
   data.value = (await res.json()) as DemoData;
-  person.value = data.value.people[0] ?? null;
   applyHash();
   // 图例渐变色（turbo，0-250）
   const c = legendCanvas.value;
@@ -246,7 +286,7 @@ onMounted(async () => {
 watch(() => frameCount.value, (n) => {
   if (frameIdx.value >= n) frameIdx.value = n - 1;
 });
-watch([sourceType, actionIdx], () => (selectedRegion.value = null));
+watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
 
 const phases = [
   { id: 1, name: '读取数据', done: true },
@@ -254,7 +294,7 @@ const phases = [
   { id: 3, name: '帧动画', done: true },
   { id: 4, name: '实时指标与曲线', done: true },
   { id: 5, name: '区域分析', done: true },
-  { id: 6, name: '完整大屏 UI', done: false },
+  { id: 6, name: '完整大屏 UI', done: true },
   { id: 7, name: '气囊模块', done: false },
   { id: 8, name: '最终 Demo', done: false },
 ];
@@ -266,7 +306,7 @@ const phases = [
       <h1>智能床垫实时监测系统</h1>
       <div class="badges">
         <span class="badge replay">● 回放 · 本地历史数据</span>
-        <span class="badge">v0.5.0 · Phase 5</span>
+        <span class="badge">v0.6.0 · Phase 6</span>
       </div>
     </header>
 
@@ -283,15 +323,17 @@ const phases = [
         <template v-if="sourceType === 'static'">
           <label class="field">
             <span>用户</span>
-            <select :value="person?.name" disabled>
-              <option>{{ person?.name }}</option>
+            <select :value="personIdx" @change="selectPerson(Number(($event.target as HTMLSelectElement).value))">
+              <option v-for="(p, i) in data?.people" :key="p.name" :value="i">
+                {{ p.name }}（{{ p.height ?? '?' }}cm / {{ p.weight ?? '?' }}kg）
+              </option>
             </select>
           </label>
           <label class="field">
             <span>动作</span>
             <select :value="actionIdx" @change="selectAction(Number(($event.target as HTMLSelectElement).value))">
               <option v-for="(a, i) in person?.actions" :key="a.action" :value="i">
-                Action {{ a.action }} · {{ SLEEP_POS_NAMES[a.sleepPos] }}
+                {{ actionLabel(a) }}
               </option>
             </select>
           </label>
@@ -332,10 +374,15 @@ const phases = [
         <div class="heatmap-panel">
           <div class="heatmap-title">
             <span>{{ sourceLabel }}</span>
-            <span class="frame-tag">第 {{ frameIdx }} 帧</span>
+            <span class="title-right">
+              <span v-if="hoverCell" class="hover-tag">
+                ({{ hoverCell.row }}, {{ hoverCell.col }}) 净压 = {{ hoverCell.value }}
+              </span>
+              <span class="frame-tag">第 {{ frameIdx }} 帧</span>
+            </span>
           </div>
           <HeatmapCanvas
-            :frame="currentFrame"
+            :frame="displayFrame"
             :mode="mode"
             :scale="scale"
             :max-height="heatmapMaxHeight"
@@ -379,21 +426,19 @@ const phases = [
       </section>
 
       <aside class="panel right">
+        <h2>睡眠状态</h2>
+        <SleepPoseCard
+          :pose="sleepPosName"
+          :duration-frames="poseDurationFrames"
+          :fps="10"
+          :note="sourceType === 'dynamic' ? '动态过程：文件内 0/1/2 标签行按官方说明忽略' : currentAction?.action === 0 ? '空载帧：扣背景后有效接触点 < 50 判定为离床（自研启发式）' : undefined"
+        />
         <h2>实时压力指标</h2>
         <MetricCards :metrics="metrics" :history="history" />
         <h2 style="margin-top: 18px">区域压力排行<span class="sub">（平均净压力）</span></h2>
         <RegionRanking :stats="regionStats" :selected="selectedRegion" :hovered="hoverRegion" @select="selectedRegion = $event" />
-        <h2 style="margin-top: 18px">当前帧</h2>
-        <dl class="info">
-          <div><dt>睡姿</dt><dd>{{ sleepPosName }}</dd></div>
-          <div><dt>传感器点</dt><dd>44 × 24 = 1056</dd></div>
-          <div>
-            <dt>悬浮读数</dt>
-            <dd>{{ hoverCell ? `(${hoverCell.row}, ${hoverCell.col}) = ${hoverCell.value}` : '悬停查看' }}</dd>
-          </div>
-        </dl>
         <p class="hint">
-          回放基准 10 fps（采集原始帧率约 2.3 fps，按演示节奏加速）；行 0 = 头端，列 12 = 中线。
+          热力图与读数均为扣除空载背景后的净压力；回放基准 10 fps（采集帧率约 2.3 fps）；行 0 = 头端，列 12 = 中线。
         </p>
         <p
           v-if="scale !== 'auto' && metrics && metrics.maxRaw > (scale === 'fixed250' ? 250 : 500)"
@@ -470,14 +515,14 @@ const phases = [
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 16px;
+  padding: 14px 16px 20px;
   overflow: auto;
   min-height: 0;
 }
 .panel h2 {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .field {
   display: block;
@@ -586,6 +631,16 @@ select {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 8px;
+}
+.title-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hover-tag {
+  font-size: 12px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
 }
 .controls {
   display: flex;

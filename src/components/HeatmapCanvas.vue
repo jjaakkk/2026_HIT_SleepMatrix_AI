@@ -189,7 +189,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize));
       </g>
     </svg>
     <div v-if="hover && hoverRegion === null" class="tooltip" :style="{ left: hover.x + 12 + 'px', top: hover.y - 10 + 'px' }">
-      (行{{ hover.row }}, 列{{ hover.col }}) = {{ hover.value.toFixed(0) }}
+      (行{{ hover.row }}, 列{{ hover.col }}) 净压 = {{ hover.value.toFixed(0) }}
     </div>
   </div>
 </template>

@@ -21,6 +21,7 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
       :key="s.name"
       class="row"
       :class="{ selected: selected === s.index, hovered: hovered === s.index }"
+      :title="`峰值 ${s.maxNet.toFixed(0)} · 有效点 ${s.activePoints} · 净压和 ${s.sumNet.toFixed(0)}`"
       @click="emit('select', s.index)"
     >
       <span class="name">
@@ -31,7 +32,6 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
         <span class="fill" :style="{ width: (s.meanNet / maxMean) * 100 + '%', background: s.color }"></span>
       </span>
       <span class="val">{{ s.meanNet.toFixed(0) }}</span>
-      <span class="meta">峰值{{ s.maxNet.toFixed(0) }} · {{ s.activePoints }}点</span>
     </button>
   </div>
 </template>
@@ -40,7 +40,7 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
 .ranking {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 .empty {
   font-size: 12px;
@@ -48,7 +48,7 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
 }
 .row {
   display: grid;
-  grid-template-columns: 62px 1fr 34px;
+  grid-template-columns: 56px 1fr 32px;
   align-items: center;
   gap: 6px;
   background: var(--bg);
@@ -95,10 +95,5 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
   font-weight: 600;
   text-align: right;
   font-variant-numeric: tabular-nums;
-}
-.meta {
-  grid-column: 2 / 4;
-  font-size: 10px;
-  color: var(--text-secondary);
 }
 </style>

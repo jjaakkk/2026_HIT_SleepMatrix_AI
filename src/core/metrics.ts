@@ -99,3 +99,24 @@ export function metricsHistory(
 ): FrameMetrics[] {
   return frames.map((f) => computeMetrics(f, bg, threshold));
 }
+
+/**
+ * 在床/离床判定（自研启发式，无官方定义）：
+ * 扣背景后有效接触点数 < limit 视为"离床/无人"。
+ * limit 建议 50（约 1056 的 5%，基于空载实测：空载扣背景后有效点 ≈ 0）。
+ */
+export function isBedOccupied(metrics: FrameMetrics, limit = 50): boolean {
+  return metrics.activePoints >= limit;
+}
+
+/**
+ * 状态持续时长：从 idx 向前数，连续相同状态（按 poseKey）的帧数。
+ * 用于睡姿卡显示"持续 N 帧 / M 秒"。
+ */
+export function poseDuration(poseKeys: ReadonlyArray<unknown>, idx: number): number {
+  if (idx < 0 || idx >= poseKeys.length) return 0;
+  const key = poseKeys[idx];
+  let n = 1;
+  for (let i = idx - 1; i >= 0 && poseKeys[i] === key; i--) n++;
+  return n;
+}

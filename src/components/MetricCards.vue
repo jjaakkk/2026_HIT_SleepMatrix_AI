@@ -46,11 +46,11 @@ const cards: CardDef[] = [
   {
     key: 'contact',
     label: '接触面积 / 有效点数',
-    unit: '点 · %',
+    unit: '占 1056 点的 %',
     color: '#a29bfe',
     value: (m) => contactIndex(m),
     fmt: (v) => v.toFixed(1),
-    note: `有效点数 ${props.metrics?.activePoints ?? '-'} / 1056 · 接触面指数为候选定义`,
+    note: '指数为候选定义，待确认',
   },
 ];
 
@@ -77,6 +77,7 @@ function drawSparkline(key: string) {
   if (series.length < 2) return;
   const n = Math.min(series.length, 60);
   const slice = series.slice(-n);
+  if (slice.length < 2) return;
   const min = Math.min(...slice);
   const max = Math.max(...slice);
   const range = max - min || 1;
@@ -122,13 +123,13 @@ watch(() => props.history, () => {
 .cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 6px;
 }
 .card {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 6px 9px;
   min-width: 0;
 }
 .card-head {
@@ -137,7 +138,7 @@ watch(() => props.history, () => {
   gap: 6px;
   font-size: 12px;
   color: var(--text-secondary);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .dot {
   width: 8px;
@@ -146,28 +147,31 @@ watch(() => props.history, () => {
   flex: none;
 }
 .value {
-  font-size: 24px;
+  font-size: 19px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 .unit {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-secondary);
-  margin-top: 2px;
+  margin-top: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .spark {
   width: 100%;
-  height: 28px;
-  margin-top: 4px;
+  height: 14px;
+  margin-top: 3px;
   display: block;
 }
 .note {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-secondary);
-  margin-top: 2px;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

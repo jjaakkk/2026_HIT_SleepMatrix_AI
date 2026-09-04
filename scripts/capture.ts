@@ -26,12 +26,15 @@ const scenarios: [string, string][] = [
   ['14-区域叠加-左侧卧', '#type=static&action=10&frame=8&mode=smooth&scale=auto'],
   ['15-区域选中-臀部', '#type=static&action=1&frame=10&mode=smooth&scale=auto&region=3'],
   ['16-小腿部标注-SAI', '#type=static&action=1&frame=8&mode=smooth&scale=auto&calf=1'],
+  ['17-睡姿卡-仰卧', '#type=static&person=SAI&action=1&frame=10&mode=smooth&scale=auto'],
+  ['18-睡姿卡-离床无人', '#type=static&person=SAI&action=0&frame=5&mode=smooth&scale=auto'],
+  ['19-用户切换-wzh右侧卧', '#type=static&person=wzh&action=16&frame=8&mode=smooth&scale=auto'],
 ];
 
 const browser = await puppeteer.launch({ headless: 'shell' });
 try {
   const page = await browser.newPage();
-  await page.setViewport({ width: 1440, height: 900 });
+  await page.setViewport({ width: 1600, height: 1000 });
 
   for (const [name, hash] of scenarios) {
     // 用查询参数做 cache-buster：同源 URL 仅变 hash 不会触发重新加载，
@@ -59,6 +62,16 @@ try {
   const [a0, a1] = (after ?? '0/0').split('/').map(Number);
   if (a0 > 0) console.log(`✓ 帧号已从 ${before} 推进到 ${after}，回放引擎工作正常`);
   else console.log(`✗ 帧号未推进，需要排查`);
+
+  // 1920×1080 大屏整体效果
+  await page.setViewport({ width: 1920, height: 1080 });
+  await page.goto(`${BASE}?c=bigscreen#type=static&person=SAI&action=1&frame=10&mode=smooth&scale=auto`, {
+    waitUntil: 'networkidle0',
+  });
+  await page.waitForSelector('canvas');
+  await sleep(700);
+  await page.screenshot({ path: path.join(OUT_DIR, '20-大屏1920-整体.png') });
+  console.log('✓ 20-大屏1920-整体 已截图');
 
   // 4× 倍速 + 动态过程播放中截图
   await page.goto(`${BASE}?c=dynamic4x#type=dynamic&frame=30`, { waitUntil: 'networkidle0' });

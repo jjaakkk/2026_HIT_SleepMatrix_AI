@@ -27,6 +27,15 @@ export const FIXED_MAX: Record<Exclude<ScaleMode, 'auto'>, number> = {
 };
 
 /**
+ * 噪声底：低于此值的压力（背景噪声）渲染为透明渐变。
+ * 实测空载背景单点可达 42、均值约 4-5，取 10 以下视为背景噪声。
+ */
+export const NOISE_FLOOR = 10;
+
+/** 自动量程下限：避免空载/离床帧把 0-27 的背景噪声拉伸成彩色噪点云 */
+export const AUTO_SCALE_MIN = 80;
+
+/**
  * 双线性采样：在"格心坐标系"下取值。
  * fx ∈ [-0.5, COLS-0.5]，fy ∈ [-0.5, ROWS-0.5]，边界外 clamp 到边缘格。
  * 格心处（fx=整数）应精确返回该格原始值。
@@ -81,7 +90,8 @@ export function renderHeatmap(
 ): { frameMax: number; scaleMax: number } {
   const { mode, scale, width, height } = opts;
   const frameMax = computeFrameMax(frame);
-  const scaleMax = scale === 'auto' ? Math.max(frameMax, 1) : FIXED_MAX[scale];
+  const scaleMax =
+    scale === 'auto' ? Math.max(frameMax, AUTO_SCALE_MIN) : FIXED_MAX[scale];
   const gamma = GAMMA[mode];
 
   ctx.clearRect(0, 0, width, height);
@@ -91,11 +101,14 @@ export function renderHeatmap(
     const ch = height / ROWS;
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        const [rr, gg, bb] = valueToColor(frame[r * COLS + c], scaleMax, gamma);
+        const v = frame[r * COLS + c];
+        const [rr, gg, bb] = valueToColor(v, scaleMax, gamma);
+        ctx.globalAlpha = Math.min(1, v / NOISE_FLOOR); // 背景噪声淡出
         ctx.fillStyle = `rgb(${Math.round(rr * 255)},${Math.round(gg * 255)},${Math.round(bb * 255)})`;
         ctx.fillRect(c * cw, r * ch, cw + 0.5, ch + 0.5);
       }
     }
+    ctx.globalAlpha = 1;
     // 网格线（对应官方 ax.grid(alpha=0.3) 效果，加亮以保证可见）
     ctx.strokeStyle = 'rgba(255,255,255,0.55)';
     ctx.lineWidth = 1;
@@ -146,7 +159,7 @@ export function renderHeatmap(
       data[o] = rr * 255;
       data[o + 1] = gg * 255;
       data[o + 2] = bb * 255;
-      data[o + 3] = 255;
+      data[o + 3] = Math.min(1, v / NOISE_FLOOR) * 255; // 背景噪声淡出
     }
   }
   ctx.putImageData(img, 0, 0);

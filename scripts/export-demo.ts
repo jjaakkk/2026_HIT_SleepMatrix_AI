@@ -17,9 +17,11 @@ const MEMBERS: Record<string, [number, number]> = {
   wzh: [167, 66],
 };
 
-// 演示子集：SAI 四个代表动作的原始帧 + wzh 动态过程前 40 帧
-const PERSON = 'SAI';
-const ACTIONS = [1, 7, 10, 16]; // 仰卧/俯卧/左侧卧/右侧卧
+// 演示子集：两人（SAI/wzh）四代表动作 + SAI 空载（无人状态演示）+ wzh 动态过程前 40 帧
+const PEOPLE: { name: string; actions: number[]; includeEmpty: boolean }[] = [
+  { name: 'SAI', actions: [1, 7, 10, 16], includeEmpty: true },
+  { name: 'wzh', actions: [1, 7, 10, 16], includeEmpty: false },
+];
 const DYNAMIC_PERSON = 'wzh';
 const DYNAMIC_FRAMES = 40;
 
@@ -37,10 +39,20 @@ for (const r of records.slice(0, 100)) {
 console.log('压力值均为整数:', allInt);
 
 const people = [];
-for (const [name, actions] of [[PERSON, ACTIONS]] as [string, number[]][]) {
+for (const { name, actions, includeEmpty } of PEOPLE) {
   const bg = meanBackground(parseTxt(load(`睡姿数据/${name}/${name}_空载.txt`)).frames);
   const [height, weight] = MEMBERS[name] ?? [null, null];
   const actionList = [];
+  if (includeEmpty) {
+    // 空载动作：用于"离床/无人"状态演示（action 0）
+    actionList.push({
+      action: 0,
+      sleepPos: -1,
+      region: '',
+      spine: '',
+      frames: parseTxt(load(`睡姿数据/${name}/${name}_空载.txt`)).frames.map((f) => Array.from(f)),
+    });
+  }
   for (const a of actions) {
     const recs = buildPlaybackList(records.filter((r) => r.peopleName === name && r.action === a));
     actionList.push({
@@ -84,5 +96,7 @@ fs.writeFileSync(outPath, JSON.stringify(demo));
 const kb = (fs.statSync(outPath).size / 1024).toFixed(0);
 console.log(`已写出 ${outPath}（${kb} KB）`);
 console.log(
-  `内容：${people[0].name} 动作[${ACTIONS.join(',')}] 原始帧 ${people[0].actions.reduce((s, a) => s + a.frames.length, 0)} 帧 + ${dynamic.frames.length} 动态帧`,
+  `内容：${people
+    .map((p) => `${p.name} ${p.actions.reduce((s, a) => s + a.frames.length, 0)} 帧`)
+    .join('、')} + ${dynamic.frames.length} 动态帧`,
 );

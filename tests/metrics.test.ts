@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseTxt } from '../src/core/parsers/txt.ts';
 import { parseDatasetJson } from '../src/core/parsers/json.ts';
-import { computeMetrics, meanBackground, mirrorFrame, contactIndex } from '../src/core/metrics.ts';
+import { computeMetrics, meanBackground, mirrorFrame, contactIndex, isBedOccupied, poseDuration } from '../src/core/metrics.ts';
 import { loadText } from './helpers.ts';
 
 test('镜像往返：mirror(mirror(x)) === x', () => {
@@ -37,4 +37,25 @@ test('指标：无背景扣除时阈值 0 = 全点参与统计', () => {
   const { frames } = parseTxt(loadText('睡姿数据/wzh/wzh_10.txt'));
   const m = computeMetrics(frames[0], null, 0);
   assert.ok(m.activePoints <= 1056 && m.maxRaw > 100);
+});
+
+test('在床/离床判定：空载帧扣背景后为离床，人体帧为在床', () => {
+  const records = parseDatasetJson(loadText('区域划分/data.json'));
+  const frame = records.find((r) => r.people === 0 && r.action === 1 && r.frame === 0 && !r.isMirrored)!;
+  const empty = parseTxt(loadText('睡姿数据/SAI/SAI_空载.txt')).frames;
+  const bg = meanBackground(empty);
+  const mBody = computeMetrics(frame.data, bg, 20);
+  assert.equal(isBedOccupied(mBody), true);
+  const mEmpty = computeMetrics(empty[0], bg, 20);
+  assert.equal(isBedOccupied(mEmpty), false);
+});
+
+test('状态持续时长：连续相同状态计数', () => {
+  const poses = ['仰卧', '仰卧', '仰卧', '左侧卧', '左侧卧'];
+  assert.equal(poseDuration(poses, 0), 1);
+  assert.equal(poseDuration(poses, 2), 3);
+  assert.equal(poseDuration(poses, 3), 2);
+  assert.equal(poseDuration(poses, 4), 2);
+  assert.equal(poseDuration(poses, -1), 0);
+  assert.equal(poseDuration(poses, 99), 0);
 });

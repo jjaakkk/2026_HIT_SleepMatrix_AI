@@ -54,7 +54,7 @@ test('状态持续时长：连续相同状态计数', () => {
   const poses = ['仰卧', '仰卧', '仰卧', '左侧卧', '左侧卧'];
   assert.equal(poseDuration(poses, 0), 1);
   assert.equal(poseDuration(poses, 2), 3);
-  assert.equal(poseDuration(poses, 3), 2);
+  assert.equal(poseDuration(poses, 3), 1); // 该位置刚进入左侧卧，只计自身
   assert.equal(poseDuration(poses, 4), 2);
   assert.equal(poseDuration(poses, -1), 0);
   assert.equal(poseDuration(poses, 99), 0);

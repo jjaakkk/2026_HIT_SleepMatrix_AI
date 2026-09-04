@@ -52,10 +52,12 @@ test('真实标注：SAI 仰卧区域统计（臀部为最大受力部位；注�
   const regions = parseRegion(regionStr);
   const frame = new Float32Array(CELLS);
   for (let r = 3; r <= 7; r++) for (let c = 6; c <= 18; c++) frame[r * COLS + c] = 60; // 肩(避开与背共享的行8)
+  for (let r = 9; r <= 12; r++) for (let c = 6; c <= 18; c++) frame[r * COLS + c] = 70; // 背(避开共享行8/13)
   for (let r = 13; r <= 17; r++) for (let c = 6; c <= 18; c++) frame[r * COLS + c] = 90; // 腰(避开与臀共享的行18)
   for (let r = 19; r <= 26; r++) for (let c = 5; c <= 20; c++) frame[r * COLS + c] = 200; // 臀(避开与大腿共享的行27)
   const stats = regionStatsAll(frame, null, regions, 20);
   assert.equal(stats[0].name, '臀部');
   assert.equal(stats[1].name, '腰部');
-  assert.equal(stats[2].name, '肩部');
+  assert.equal(stats[2].name, '背部');
+  assert.equal(stats[3].name, '肩部');
 });

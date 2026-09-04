@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import HeatmapCanvas from './components/HeatmapCanvas.vue';
 import { turboColor } from './render/heatmap.ts';
 import type { HeatmapMode, ScaleMode } from './render/heatmap.ts';
 import { SLEEP_POS_NAMES } from './core/types.ts';
 import { computeMetrics } from './core/metrics.ts';
+import { PlaybackController } from './core/playback.ts';
 
 interface DemoAction {
   action: number;
@@ -27,22 +28,99 @@ interface DemoData {
 
 const data = ref<DemoData | null>(null);
 const person = ref<DemoPerson | null>(null);
+const sourceType = ref<'static' | 'dynamic'>('static');
 const actionIdx = ref(0);
-const frameIdx = ref(0);
 const mode = ref<HeatmapMode>('smooth');
-const scale = ref<ScaleMode>('fixed250');
+const scale = ref<ScaleMode>('auto');
 const hoverCell = ref<{ row: number; col: number; value: number } | null>(null);
 
 const currentAction = computed(() => person.value?.actions[actionIdx.value] ?? null);
-const frameCount = computed(() => currentAction.value?.frames.length ?? 0);
-const currentFrame = computed(() => currentAction.value?.frames[frameIdx.value] ?? new Float32Array(0));
-const sleepPosName = computed(() =>
-  currentAction.value ? SLEEP_POS_NAMES[currentAction.value.sleepPos] ?? '未知' : '-',
+const frameCount = computed(() =>
+  sourceType.value === 'dynamic'
+    ? data.value?.dynamic.frames.length ?? 0
+    : currentAction.value?.frames.length ?? 0,
 );
+const sleepPosName = computed(() =>
+  sourceType.value === 'dynamic'
+    ? '动态过程'
+    : currentAction.value
+      ? (SLEEP_POS_NAMES[currentAction.value.sleepPos] ?? '未知')
+      : '-',
+);
+const sourceLabel = computed(() =>
+  sourceType.value === 'dynamic'
+    ? `${data.value?.dynamic.person ?? ''} · 动态过程`
+    : `${person.value?.name ?? ''} · Action ${currentAction.value?.action ?? '-'} · ${sleepPosName.value}`,
+);
+
+// 回放引擎
+const controller = ref<PlaybackController | null>(null);
+const frameIdx = ref(0);
+const speed = ref(1);
+const playing = ref(false);
+
+function rebuildController() {
+  const frames =
+    sourceType.value === 'dynamic'
+      ? (data.value?.dynamic.frames ?? [])
+      : (currentAction.value?.frames ?? []);
+  controller.value = new PlaybackController(frames as ArrayLike<number>[], { fps: 10 });
+  controller.value.onFrame = (i) => (frameIdx.value = i);
+  controller.value.speed = speed.value;
+  playing.value = false;
+  frameIdx.value = 0;
+}
+
+const currentFrame = computed(
+  () =>
+    (sourceType.value === 'dynamic'
+      ? data.value?.dynamic.frames[frameIdx.value]
+      : currentAction.value?.frames[frameIdx.value]) ?? new Float32Array(0),
+);
+
 const metrics = computed(() => {
   if (!currentFrame.value.length || !person.value) return null;
   return computeMetrics(currentFrame.value, person.value.bg, 20);
 });
+
+// rAF 驱动
+let rafId = 0;
+let lastTs = 0;
+function loop(ts: number) {
+  if (lastTs > 0) controller.value?.tick(ts - lastTs);
+  lastTs = ts;
+  playing.value = controller.value?.isPlaying ?? false;
+  rafId = requestAnimationFrame(loop);
+}
+onMounted(() => (rafId = requestAnimationFrame(loop)));
+onBeforeUnmount(() => cancelAnimationFrame(rafId));
+
+function togglePlay() {
+  controller.value?.toggle();
+}
+function stepPrev() {
+  controller.value?.step(-1);
+}
+function stepNext() {
+  controller.value?.step(1);
+}
+function onSeek(e: Event) {
+  const v = Number((e.target as HTMLInputElement).value);
+  controller.value?.seek(v);
+}
+function setSpeed(v: number) {
+  speed.value = v;
+  if (controller.value) controller.value.speed = v;
+}
+
+function selectAction(i: number) {
+  actionIdx.value = i;
+  rebuildController();
+}
+function selectSource(t: 'static' | 'dynamic') {
+  sourceType.value = t;
+  rebuildController();
+}
 
 const modeOptions: { value: HeatmapMode; label: string }[] = [
   { value: 'smooth', label: '标准' },
@@ -50,50 +128,61 @@ const modeOptions: { value: HeatmapMode; label: string }[] = [
   { value: 'grid', label: '原始网格' },
 ];
 const scaleOptions: { value: ScaleMode; label: string }[] = [
-  { value: 'fixed250', label: '固定 0–250' },
+  { value: 'fixed250', label: '0–250' },
   { value: 'auto', label: '自动' },
-  { value: 'fixed500', label: '固定 0–500' },
+  { value: 'fixed500', label: '0–500' },
 ];
+const speedOptions = [0.5, 1, 2, 4];
 
-function selectAction(i: number) {
-  actionIdx.value = i;
-  frameIdx.value = 0;
+// URL hash 状态（便于截图/演示直链）：#type=dynamic&action=2&frame=10&mode=grid&scale=auto
+function applyHash() {
+  const h = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
+  if (h.get('type') === 'dynamic') sourceType.value = 'dynamic';
+  const a = Number(h.get('action'));
+  if (!Number.isNaN(a) && person.value) {
+    const idx = person.value.actions.findIndex((x) => x.action === a);
+    if (idx >= 0) actionIdx.value = idx;
+  }
+  if (h.get('mode') === 'grid' || h.get('mode') === 'weak') mode.value = h.get('mode') as HeatmapMode;
+  if (h.get('scale') === 'auto' || h.get('scale') === 'fixed500') scale.value = h.get('scale') as ScaleMode;
+  rebuildController();
+  const f = Number(h.get('frame'));
+  if (!Number.isNaN(f)) controller.value?.seek(f);
 }
+
+const legendCanvas = ref<HTMLCanvasElement | null>(null);
 
 onMounted(async () => {
   const res = await fetch(`${import.meta.env.BASE_URL}data/demo.json`);
   data.value = (await res.json()) as DemoData;
   person.value = data.value.people[0] ?? null;
+  applyHash();
+  // 图例渐变色（turbo，0-250）
+  const c = legendCanvas.value;
+  if (c) {
+    c.width = 256;
+    c.height = 14;
+    const ctx = c.getContext('2d')!;
+    for (let x = 0; x < 256; x++) {
+      const [r, g, b] = turboColor(x / 255);
+      ctx.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+      ctx.fillRect(x, 0, 1, 14);
+    }
+  }
 });
 
-watch(actionIdx, () => (frameIdx.value = 0));
 watch(() => frameCount.value, (n) => {
   if (frameIdx.value >= n) frameIdx.value = n - 1;
 });
 
-// 图例渐变色（turbo，0-250）
-const legendCanvas = ref<HTMLCanvasElement | null>(null);
-onMounted(() => {
-  const c = legendCanvas.value;
-  if (!c) return;
-  c.width = 256;
-  c.height = 14;
-  const ctx = c.getContext('2d')!;
-  for (let x = 0; x < 256; x++) {
-    const [r, g, b] = turboColor(x / 255);
-    ctx.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
-    ctx.fillRect(x, 0, 1, 14);
-  }
-});
-
 const phases = [
-  { id: 1, name: '读取数据（txt/json 解析 + 标注 + 指标）', done: true },
-  { id: 2, name: '静态热力图（Canvas + turbo 色带）', done: true },
-  { id: 3, name: '帧动画（回放引擎）', done: false },
-  { id: 4, name: '实时指标卡与曲线', done: false },
-  { id: 5, name: '区域分析叠加', done: false },
+  { id: 1, name: '读取数据', done: true },
+  { id: 2, name: '静态热力图', done: true },
+  { id: 3, name: '帧动画', done: true },
+  { id: 4, name: '实时指标与曲线', done: false },
+  { id: 5, name: '区域分析', done: false },
   { id: 6, name: '完整大屏 UI', done: false },
-  { id: 7, name: '气囊模块（模拟 + 预留接口）', done: false },
+  { id: 7, name: '气囊模块', done: false },
   { id: 8, name: '最终 Demo', done: false },
 ];
 </script>
@@ -104,40 +193,40 @@ const phases = [
       <h1>智能床垫实时监测系统</h1>
       <div class="badges">
         <span class="badge replay">● 回放 · 本地历史数据</span>
-        <span class="badge">v0.2.0 · Phase 2</span>
+        <span class="badge">v0.3.0 · Phase 3</span>
       </div>
     </header>
 
     <main class="content">
       <aside class="panel left">
         <h2>数据源</h2>
-        <label class="field">
-          <span>用户</span>
-          <select :value="person?.name" disabled>
-            <option>{{ person?.name }}</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>动作</span>
-          <select :value="actionIdx" @change="selectAction(Number(($event.target as HTMLSelectElement).value))">
-            <option v-for="(a, i) in person?.actions" :key="a.action" :value="i">
-              Action {{ a.action }} · {{ SLEEP_POS_NAMES[a.sleepPos] }}
-            </option>
-          </select>
-        </label>
-        <label class="field">
-          <span>帧号 {{ frameIdx }} / {{ frameCount - 1 }}</span>
-          <input type="range" :min="0" :max="frameCount - 1" v-model.number="frameIdx" />
-        </label>
+        <div class="field">
+          <span>类型</span>
+          <div class="seg">
+            <button :class="{ active: sourceType === 'static' }" @click="selectSource('static')">静态动作</button>
+            <button :class="{ active: sourceType === 'dynamic' }" @click="selectSource('dynamic')">动态过程</button>
+          </div>
+        </div>
+        <template v-if="sourceType === 'static'">
+          <label class="field">
+            <span>用户</span>
+            <select :value="person?.name" disabled>
+              <option>{{ person?.name }}</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>动作</span>
+            <select :value="actionIdx" @change="selectAction(Number(($event.target as HTMLSelectElement).value))">
+              <option v-for="(a, i) in person?.actions" :key="a.action" :value="i">
+                Action {{ a.action }} · {{ SLEEP_POS_NAMES[a.sleepPos] }}
+              </option>
+            </select>
+          </label>
+        </template>
         <div class="field">
           <span>显示模式</span>
           <div class="seg">
-            <button
-              v-for="m in modeOptions"
-              :key="m.value"
-              :class="{ active: mode === m.value }"
-              @click="mode = m.value"
-            >
+            <button v-for="m in modeOptions" :key="m.value" :class="{ active: mode === m.value }" @click="mode = m.value">
               {{ m.label }}
             </button>
           </div>
@@ -145,12 +234,7 @@ const phases = [
         <div class="field">
           <span>量程</span>
           <div class="seg">
-            <button
-              v-for="s in scaleOptions"
-              :key="s.value"
-              :class="{ active: scale === s.value }"
-              @click="scale = s.value"
-            >
+            <button v-for="s in scaleOptions" :key="s.value" :class="{ active: scale === s.value }" @click="scale = s.value">
               {{ s.label }}
             </button>
           </div>
@@ -166,15 +250,36 @@ const phases = [
       <section class="center">
         <div class="heatmap-panel">
           <div class="heatmap-title">
-            <span>{{ person?.name }} · Action {{ currentAction?.action }} · {{ sleepPosName }}</span>
+            <span>{{ sourceLabel }}</span>
             <span class="frame-tag">第 {{ frameIdx }} 帧</span>
           </div>
-          <HeatmapCanvas
-            :frame="currentFrame"
-            :mode="mode"
-            :scale="scale"
-            @hover="hoverCell = $event"
-          />
+          <HeatmapCanvas :frame="currentFrame" :mode="mode" :scale="scale" @hover="hoverCell = $event" />
+          <div class="controls">
+            <button class="ctl" title="上一帧" @click="stepPrev">⏮</button>
+            <button class="ctl play" :title="playing ? '暂停' : '播放'" @click="togglePlay">
+              {{ playing ? 'Ⅱ' : '▶' }}
+            </button>
+            <button class="ctl" title="下一帧" @click="stepNext">⏭</button>
+            <input
+              class="progress"
+              type="range"
+              :min="0"
+              :max="frameCount - 1"
+              :value="frameIdx"
+              @input="onSeek"
+            />
+            <span class="frame-num">{{ frameIdx }} / {{ frameCount - 1 }}</span>
+            <div class="speed-seg">
+              <button
+                v-for="s in speedOptions"
+                :key="s"
+                :class="{ active: speed === s }"
+                @click="setSpeed(s)"
+              >
+                {{ s }}×
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -185,19 +290,29 @@ const phases = [
           <div><dt>传感器点</dt><dd>44 × 24 = 1056</dd></div>
           <div><dt>最大压力</dt><dd>{{ metrics?.maxRaw ?? '-' }}</dd></div>
           <div><dt>净最大（扣空载）</dt><dd>{{ metrics ? metrics.maxNet.toFixed(0) : '-' }}</dd></div>
-          <div><dt>有效接触点</dt><dd>{{ metrics ? `${metrics.activePoints}（${(metrics.contactRatio * 100).toFixed(1)}%）` : '-' }}</dd></div>
-          <div><dt>悬浮读数</dt><dd>{{ hoverCell ? `(${hoverCell.row}, ${hoverCell.col}) = ${hoverCell.value}` : '悬停查看' }}</dd></div>
+          <div>
+            <dt>有效接触点</dt>
+            <dd>{{ metrics ? `${metrics.activePoints}（${(metrics.contactRatio * 100).toFixed(1)}%）` : '-' }}</dd>
+          </div>
+          <div>
+            <dt>悬浮读数</dt>
+            <dd>{{ hoverCell ? `(${hoverCell.row}, ${hoverCell.col}) = ${hoverCell.value}` : '悬停查看' }}</dd>
+          </div>
         </dl>
         <p class="hint">
-          行 0 = 头端，列 12 = 中线。量程 0–250 与项目组参考热力图一致；"弱力增强"为显示增强模式（p^0.35 压扩）。
+          回放基准 10 fps（采集原始帧率约 2.3 fps，按演示节奏加速）；行 0 = 头端，列 12 = 中线。
+        </p>
+        <p
+          v-if="scale !== 'auto' && metrics && metrics.maxRaw > (scale === 'fixed250' ? 250 : 500)"
+          class="warn"
+        >
+          ⚠ 帧最大压力 {{ metrics.maxRaw }} 超出当前量程，峰值区被削顶显示
         </p>
       </aside>
     </main>
 
     <footer class="footer">
-      <span v-for="p in phases" :key="p.id" class="phase" :class="{ done: p.done }">
-        P{{ p.id }} {{ p.name }}
-      </span>
+      <span v-for="p in phases" :key="p.id" class="phase" :class="{ done: p.done }">P{{ p.id }} {{ p.name }}</span>
     </footer>
   </div>
 </template>
@@ -265,8 +380,7 @@ const phases = [
   color: var(--text-secondary);
   margin-bottom: 6px;
 }
-select,
-input[type='range'] {
+select {
   width: 100%;
   background: var(--bg);
   color: var(--text);
@@ -316,7 +430,7 @@ input[type='range'] {
 }
 .heatmap-panel {
   width: 100%;
-  max-width: 560px;
+  max-width: 620px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -336,6 +450,54 @@ input[type='range'] {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 8px;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ctl {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 34px;
+  height: 30px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.ctl.play {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.progress {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.frame-num {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 56px;
+  text-align: right;
+}
+.speed-seg {
+  display: flex;
+  gap: 4px;
+}
+.speed-seg button {
+  background: var(--bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.speed-seg button.active {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .info {
   display: flex;
@@ -358,6 +520,12 @@ input[type='range'] {
   margin-top: 14px;
   font-size: 12px;
   color: var(--text-secondary);
+  line-height: 1.6;
+}
+.warn {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #d29922;
   line-height: 1.6;
 }
 .footer {

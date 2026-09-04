@@ -24,8 +24,10 @@ function draw() {
   const canvas = canvasRef.value;
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
-  const w = Math.round(cssWidth.value * dpr);
-  const h = Math.round((cssWidth.value * ROWS) / COLS * dpr);
+  // 平滑模式做 2× 超采样（浏览器缩放时平滑下采样），消除格心插值的阶梯感
+  const ss = props.mode === 'grid' ? 1 : 2;
+  const w = Math.round(cssWidth.value * dpr * ss);
+  const h = Math.round(((cssWidth.value * ROWS) / COLS) * dpr * ss);
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;

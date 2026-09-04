@@ -96,9 +96,9 @@ export function renderHeatmap(
         ctx.fillRect(c * cw, r * ch, cw + 0.5, ch + 0.5);
       }
     }
-    // 网格线（alpha 0.3，同官方绘图示例）
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    ctx.lineWidth = 0.5;
+    // 网格线（对应官方 ax.grid(alpha=0.3) 效果，加亮以保证可见）
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     for (let c = 1; c < COLS; c++) {
       ctx.moveTo(c * cw, 0);

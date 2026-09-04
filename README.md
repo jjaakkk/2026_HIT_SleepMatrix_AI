@@ -28,7 +28,9 @@ npm install
 npm run dev      # 开发服务器
 npm run test     # 单元测试（Node 内置 runner，直接对真实数据断言）
 npm run demo     # Phase 1 数据读取自检（打印关键数字）
+npm run export:demo # 生成浏览器演示集 public/data/demo.json
 npm run build    # 类型检查 + 构建
+npm run capture  # 无头浏览器截图验证（需先启动 dev/preview 服务）
 ```
 
 测试默认从仓库上一级 `../睡姿 区域划分data/睡姿 区域划分data` 读取数据集，
@@ -36,5 +38,5 @@ npm run build    # 类型检查 + 构建
 
 ## 开发路线
 
-Phase 1 数据读取 ✅ → Phase 2 静态热力图 → Phase 3 帧动画 → Phase 4 实时指标 →
+Phase 1 数据读取 ✅ → Phase 2 静态热力图 ✅ → Phase 3 帧动画 ✅ → Phase 4 实时指标与曲线 →
 Phase 5 区域分析 → Phase 6 完整 UI → Phase 7 气囊模块 → Phase 8 最终 Demo

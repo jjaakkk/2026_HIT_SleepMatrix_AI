@@ -39,4 +39,17 @@ npm run capture  # 无头浏览器截图验证（需先启动 dev/preview 服务
 ## 开发路线
 
 Phase 1 数据读取 ✅ → Phase 2 静态热力图 ✅ → Phase 3 帧动画 ✅ → Phase 4 实时指标与曲线 ✅ →
-Phase 5 区域分析 ✅ → Phase 6 完整大屏 UI ✅ → Phase 7 气囊模块 → Phase 8 最终 Demo
+Phase 5 区域分析 ✅ → Phase 6 完整大屏 UI ✅ → Phase 7 气囊模块 ✅ → Phase 8 最终 Demo ✅
+
+## 答辩演示剧本（URL hash 直链）
+
+| 步骤 | 演示内容 | 直链 hash |
+|---|---|---|
+| 1 | SAI 仰卧：区域框+脊柱线+指标+排行 | `#type=static&person=SAI&action=1&frame=10` |
+| 2 | 切左侧卧：区域偏移、峰值升高（488） | `#type=static&person=SAI&action=10&frame=8` |
+| 3 | 原始网格模式：证明数据真实 | `#type=static&person=SAI&action=1&frame=10&mode=grid` |
+| 4 | 空载帧：离床·无人状态检测 | `#type=static&person=SAI&action=0&frame=5` |
+| 5 | 动态过程回放：睡姿连续切换 | `#type=dynamic&frame=0&autoplay=1` |
+| 6 | 动态+睡姿事件条（标签仅供参考） | `#type=dynamic&frame=55&dynlabels=1` |
+| 7 | 气囊剧本：腰部支撑增强→腰部联动 | 点击"腰部支撑增强"按钮 |
+| 8 | 点击任意传感器点/区域：曲线联动 | 鼠标操作 |

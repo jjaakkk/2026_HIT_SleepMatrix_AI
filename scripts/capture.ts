@@ -29,6 +29,8 @@ const scenarios: [string, string][] = [
   ['17-睡姿卡-仰卧', '#type=static&person=SAI&action=1&frame=10&mode=smooth&scale=auto'],
   ['18-睡姿卡-离床无人', '#type=static&person=SAI&action=0&frame=5&mode=smooth&scale=auto'],
   ['19-用户切换-wzh右侧卧', '#type=static&person=wzh&action=16&frame=8&mode=smooth&scale=auto'],
+  ['21-气囊面板-均衡', '#type=static&person=SAI&action=1&frame=8&mode=smooth&scale=auto'],
+  ['23-动态-睡姿事件条', '#type=dynamic&frame=55&mode=smooth&scale=auto&dynlabels=1'],
 ];
 
 const browser = await puppeteer.launch({ headless: 'shell' });
@@ -46,6 +48,29 @@ try {
     await page.screenshot({ path: out });
     console.log(`✓ ${name} → ${out}`);
   }
+
+  // 气囊剧本：点击"腰部支撑增强"，验证腰部区域被选中 + 气囊压力爬坡
+  await page.goto(`${BASE}?c=airbagpreset#type=static&person=SAI&action=1&frame=8&mode=smooth&scale=auto`, {
+    waitUntil: 'networkidle0',
+  });
+  await page.waitForSelector('.presets button');
+  await sleep(700);
+  await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.presets button')] as HTMLElement[];
+    btns.find((b) => b.textContent?.includes('腰部支撑增强'))?.click();
+  });
+  await sleep(1500); // 等待充气爬坡
+  const airbagInfo = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.zone')].map((z) => z.textContent?.replace(/\s+/g, ' ').trim());
+    const selected = [...document.querySelectorAll('.ranking .row')]
+      .find((r) => r.classList.contains('selected'))
+      ?.textContent?.replace(/\s+/g, ' ')
+      .trim();
+    return { rows, selected };
+  });
+  console.log('[气囊] 腰部支撑增强后:', JSON.stringify(airbagInfo));
+  await page.screenshot({ path: path.join(OUT_DIR, '22-气囊-腰部支撑增强联动.png') });
+  console.log('✓ 22-气囊-腰部支撑增强联动 已截图');
 
   // 播放模拟：点播放按钮，验证帧号确实推进（数值验证）
   await page.goto(`${BASE}?c=playback#type=static&action=1&frame=0`, { waitUntil: 'networkidle0' });

@@ -23,7 +23,7 @@ const PEOPLE: { name: string; actions: number[]; includeEmpty: boolean }[] = [
   { name: 'wzh', actions: [1, 7, 10, 16], includeEmpty: false },
 ];
 const DYNAMIC_PERSON = 'wzh';
-const DYNAMIC_FRAMES = 40;
+const DYNAMIC_FRAMES = 80; // 覆盖仰卧→左侧卧→仰卧→俯卧段，睡姿事件条可展示多色分段
 
 console.log('=== 导出浏览器演示数据集 ===');
 

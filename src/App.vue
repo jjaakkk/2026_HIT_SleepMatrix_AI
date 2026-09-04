@@ -5,6 +5,8 @@ import MetricCards from './components/MetricCards.vue';
 import MetricsChart from './components/MetricsChart.vue';
 import RegionRanking from './components/RegionRanking.vue';
 import SleepPoseCard from './components/SleepPoseCard.vue';
+import AirbagPanel from './components/AirbagPanel.vue';
+import PoseTimeline from './components/PoseTimeline.vue';
 import { turboColor } from './render/heatmap.ts';
 import type { HeatmapMode, ScaleMode } from './render/heatmap.ts';
 import { SLEEP_POS_NAMES } from './core/types.ts';
@@ -12,6 +14,7 @@ import { computeMetrics, metricsHistory, isBedOccupied, poseDuration } from './c
 import { parseRegion, parseSpine } from './core/parsers/annotations.ts';
 import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stats.ts';
 import { PlaybackController } from './core/playback.ts';
+import { SimulatedAirbagSource } from './core/airbag.ts';
 
 interface DemoAction {
   action: number;
@@ -150,8 +153,20 @@ const spine = computed(() =>
 const showRegions = ref(true);
 const showSpine = ref(true);
 const showCalf = ref(false);
+const showDynLabels = ref(false); // 动态文件内 0/1/2 标签（官方：忽视，仅参考展示）
 const selectedRegion = ref<number | null>(null);
 const hoverRegion = ref<number | null>(null);
+
+// 气囊模拟源（真实设备就绪后换成实现同一接口的适配器）
+const airbagSource = new SimulatedAirbagSource();
+
+function onAirbagPreset(name: string) {
+  // 演示联动：腰部支撑增强 → 选中腰部区域，展示其压力曲线与区域高亮
+  if (name === '腰部支撑增强') {
+    showRegions.value = true;
+    selectedRegion.value = 2;
+  }
+}
 
 // 当前帧区域统计（按平均净压力降序）
 const regionStats = computed(() => {
@@ -182,7 +197,11 @@ const selectedRegionColor = computed(() => {
 let rafId = 0;
 let lastTs = 0;
 function loop(ts: number) {
-  if (lastTs > 0) controller.value?.tick(ts - lastTs);
+  if (lastTs > 0) {
+    const dt = ts - lastTs;
+    controller.value?.tick(dt);
+    airbagSource.tick(dt);
+  }
   lastTs = ts;
   playing.value = controller.value?.isPlaying ?? false;
   rafId = requestAnimationFrame(loop);
@@ -251,6 +270,7 @@ function applyHash() {
   if (h.get('mode') === 'grid' || h.get('mode') === 'weak') mode.value = h.get('mode') as HeatmapMode;
   if (h.get('scale') === 'auto' || h.get('scale') === 'fixed500') scale.value = h.get('scale') as ScaleMode;
   if (h.get('calf') === '1') showCalf.value = true;
+  if (h.get('dynlabels') === '1') showDynLabels.value = true;
   const rgRaw = h.get('region');
   if (rgRaw !== null) {
     const rg = Number(rgRaw);
@@ -295,8 +315,8 @@ const phases = [
   { id: 4, name: '实时指标与曲线', done: true },
   { id: 5, name: '区域分析', done: true },
   { id: 6, name: '完整大屏 UI', done: true },
-  { id: 7, name: '气囊模块', done: false },
-  { id: 8, name: '最终 Demo', done: false },
+  { id: 7, name: '气囊模块', done: true },
+  { id: 8, name: '最终 Demo', done: true },
 ];
 </script>
 
@@ -306,7 +326,8 @@ const phases = [
       <h1>智能床垫实时监测系统</h1>
       <div class="badges">
         <span class="badge replay">● 回放 · 本地历史数据</span>
-        <span class="badge">v0.6.0 · Phase 6</span>
+        <span class="badge sim">● 气囊 · 模拟数据</span>
+        <span class="badge">v0.8.0 · Phase 8</span>
       </div>
     </header>
 
@@ -360,6 +381,9 @@ const phases = [
             <label><input type="checkbox" v-model="showRegions" /> 区域框</label>
             <label><input type="checkbox" v-model="showSpine" /> 脊柱线</label>
             <label><input type="checkbox" v-model="showCalf" /> 小腿部<span class="tiny">(仅3人有标注)</span></label>
+            <label v-if="sourceType === 'dynamic'">
+              <input type="checkbox" v-model="showDynLabels" /> 文件内睡姿标签<span class="tiny">(仅供参考)</span>
+            </label>
           </div>
         </div>
         <div class="legend">
@@ -449,17 +473,28 @@ const phases = [
       </aside>
     </main>
 
-    <section class="chart-panel">
-      <h2>压力指标趋势（随回放实时更新）</h2>
-      <MetricsChart
-        :history="history"
-        :frame-idx="frameIdx"
-        :extra-series="
-          selectedRegion !== null && regionCurve.length
-            ? [{ label: `${selectedRegionName}平均压力`, color: selectedRegionColor, values: regionCurve }]
-            : []
-        "
-      />
+    <section class="bottom">
+      <div class="chart-panel">
+        <h2>压力指标趋势（随回放实时更新）</h2>
+        <PoseTimeline
+          v-if="sourceType === 'dynamic' && showDynLabels && data"
+          :labels="data.dynamic.labels"
+          :frame-idx="frameIdx"
+          @seek="(i) => controller?.seek(i)"
+        />
+        <MetricsChart
+          :history="history"
+          :frame-idx="frameIdx"
+          :extra-series="
+            selectedRegion !== null && regionCurve.length
+              ? [{ label: `${selectedRegionName}平均压力`, color: selectedRegionColor, values: regionCurve }]
+              : []
+          "
+        />
+      </div>
+      <div class="airbag-panel panel">
+        <AirbagPanel :source="airbagSource" @preset="onAirbagPreset" />
+      </div>
     </section>
 
     <footer class="footer">
@@ -500,6 +535,41 @@ const phases = [
 .badge.replay {
   color: var(--accent);
   border-color: var(--accent);
+}
+.badge.sim {
+  color: #d29922;
+  border-color: #d29922;
+}
+.bottom {
+  display: flex;
+  gap: 16px;
+  margin: 0 20px 16px;
+  min-height: 0;
+}
+.chart-panel {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.chart-panel h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.chart-panel :deep(.chart-wrap) {
+  flex: 1;
+}
+.airbag-panel {
+  width: 400px;
+  flex: none;
+  height: 220px;
 }
 .content {
   flex: 1;
@@ -726,25 +796,6 @@ select {
   padding: 10px 20px;
   border-top: 1px solid var(--border);
   font-size: 11px;
-}
-.chart-panel {
-  margin: 0 20px 16px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 16px;
-  height: 220px;
-  display: flex;
-  flex-direction: column;
-}
-.chart-panel h2 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-}
-.chart-panel :deep(.chart-wrap) {
-  flex: 1;
 }
 .phase {
   color: var(--text-secondary);

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test \"tests/*.test.ts\"",
     "demo": "node --experimental-strip-types scripts/quickcheck.ts",
-    "export:demo": "node --experimental-strip-types scripts/export-demo.ts"
+    "export:demo": "node --experimental-strip-types scripts/export-demo.ts",
+    "capture": "node --experimental-strip-types scripts/capture.ts"
   },
   "dependencies": {
     "vue": "^3.5.13"
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@vitejs/plugin-vue": "^5.2.3",
+    "puppeteer": "^25.10.0",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
     "vue-tsc": "^2.2.10"

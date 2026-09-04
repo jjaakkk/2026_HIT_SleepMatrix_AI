@@ -10,10 +10,10 @@ const props = defineProps<{
 const emit = defineEmits<{ seek: [index: number] }>();
 
 const POS_COLORS: Record<number, string> = {
-  0: '#58A6FF', // 仰卧
-  1: '#BC8CFF', // 俯卧
-  2: '#3FB950', // 左侧卧
-  3: '#D29922', // 右侧卧
+  0: '#4da6ff', // 仰卧
+  1: '#e6b84c', // 俯卧
+  2: '#2fd6b6', // 左侧卧
+  3: '#ff7a6b', // 右侧卧
 };
 
 const POS_NAMES: Record<number, string> = { 0: '仰卧', 1: '俯卧', 2: '左侧卧', 3: '右侧卧' };

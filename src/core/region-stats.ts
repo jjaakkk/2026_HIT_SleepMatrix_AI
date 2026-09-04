@@ -1,13 +1,13 @@
 import { CELLS, COLS, type BodyRegion } from './types.ts';
 
-/** 六部位主题色（设计文档第八部分配色体系） */
+/** 六部位主题色（v2 商业级配色：无紫色，区分度与热力图 turbo 色带协调） */
 export const REGION_COLORS: Record<string, string> = {
   肩部: '#FF9F43',
-  背部: '#FECA57',
-  腰部: '#48DBFB',
+  背部: '#F2C14E',
+  腰部: '#4DD6E8',
   臀部: '#FF6B81',
-  大腿部: '#A29BFE',
-  小腿部: '#55EFC4',
+  大腿部: '#7FB2F0',
+  小腿部: '#6FE3C0',
 };
 
 export interface RegionMetrics {

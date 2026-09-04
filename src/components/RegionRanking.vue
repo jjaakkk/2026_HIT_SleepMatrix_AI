@@ -31,7 +31,7 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
       <span class="bar">
         <span class="fill" :style="{ width: (s.meanNet / maxMean) * 100 + '%', background: s.color }"></span>
       </span>
-      <span class="val">{{ s.meanNet.toFixed(0) }}</span>
+      <span class="val num">{{ s.meanNet.toFixed(0) }}</span>
     </button>
   </div>
 </template>
@@ -44,27 +44,32 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
 }
 .empty {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 .row {
   display: grid;
   grid-template-columns: 56px 1fr 32px;
   align-items: center;
   gap: 6px;
-  background: var(--bg);
+  background: var(--panel-inset);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-ctl);
   padding: 5px 8px;
   cursor: pointer;
   color: var(--text);
   text-align: left;
   position: relative;
+  transition: border-color 0.15s, background 0.15s;
+}
+.row:hover {
+  border-color: var(--border-strong);
 }
 .row.selected {
   border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .row.hovered:not(.selected) {
-  border-color: #57606a;
+  border-color: var(--border-strong);
 }
 .name {
   display: flex;

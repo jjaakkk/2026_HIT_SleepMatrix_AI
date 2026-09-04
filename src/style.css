@@ -1,12 +1,52 @@
+/* ============ SleepMatrix 设计令牌（美学方向：睡眠实验室仪器） ============ */
 :root {
   color-scheme: dark;
-  --bg: #0d1117;
-  --panel: #161b22;
-  --border: #30363d;
-  --text: #e6edf3;
-  --text-secondary: #8b949e;
-  --accent: #39c5cf;
-  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+
+  /* 底色体系 */
+  --bg: #0b1116;
+  --bg-elev: #0f171d;
+  --panel: #111b23;
+  --panel-inset: #0c141a;
+  --border: rgba(148, 168, 184, 0.14);
+  --border-strong: rgba(148, 168, 184, 0.28);
+
+  /* 主色（磷光青绿） */
+  --accent: #2fd6b6;
+  --accent-soft: rgba(47, 214, 182, 0.13);
+  --accent-glow: rgba(47, 214, 182, 0.35);
+
+  /* 文本 */
+  --text: #e9f0f5;
+  --text-2: #9fb0bc;
+  --text-3: #64747f;
+  /* 兼容别名（组件沿用） */
+  --text-secondary: var(--text-2);
+
+  /* 语义色 */
+  --c-blue: #4da6ff;
+  --c-amber: #e6b84c;
+  --c-teal: #2fd6b6;
+  --c-coral: #ff7a6b;
+  --c-gray: #7a8794;
+  --c-red: #f85149;
+
+  /* 字体 */
+  --font-ui: 'IBM Plex Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  /* 圆角 */
+  --r-panel: 10px;
+  --r-card: 8px;
+  --r-ctl: 6px;
+  --r-pill: 999px;
+
+  /* 间距 */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
 }
 
 * {
@@ -15,12 +55,57 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 #app {
-  min-height: 100vh;
+  height: 100%;
+}
+
+/* 数字读数：等宽表格数字，仪器感 */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 键盘焦点可见性 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* 滚动条克制化 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 168, 184, 0.22);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 尊重减少动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

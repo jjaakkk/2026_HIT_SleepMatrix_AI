@@ -37,7 +37,7 @@ interface DemoData {
 }
 
 const data = ref<DemoData | null>(null);
-/** 数据源：demo = 真实数据子集（public/data/demo.json）；simulated = 内置模拟数据 */
+/** 数据模式：demo = 真实记录子集；simulated = 内置演示数据 */
 const dataSource = ref<'demo' | 'simulated'>('demo');
 const simulatedCache = ref<DemoData | null>(null);
 
@@ -60,7 +60,7 @@ async function loadData(): Promise<void> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data.value = (await res.json()) as DemoData;
   } catch (e) {
-    console.warn('[数据] demo.json 加载失败，自动切换内置模拟数据：', e);
+    console.warn('[数据] demo.json 加载失败，自动切换内置演示数据：', e);
     dataSource.value = 'simulated';
     data.value = simulatedData();
   }
@@ -121,13 +121,13 @@ const poseKeys = computed(() =>
 const poseDurationFrames = computed(() => poseDuration(poseKeys.value, frameIdx.value));
 
 function actionLabel(a: DemoAction): string {
-  if (a.action === 0) return '空载（无人）';
-  return `Action ${a.action} · ${SLEEP_POS_NAMES[a.sleepPos] ?? ''}`;
+  if (a.action === 0) return '空载记录 · 无人';
+  return `${SLEEP_POS_NAMES[a.sleepPos] ?? ''} · 记录 ${a.action}`;
 }
 const sourceLabel = computed(() =>
   sourceType.value === 'dynamic'
-    ? `${data.value?.dynamic.person ?? ''} · 动态过程`
-    : `${person.value?.name ?? ''} · Action ${currentAction.value?.action ?? '-'} · ${sleepPosName.value}`,
+    ? `${data.value?.dynamic.person ?? ''} · 翻身过程`
+    : `${person.value?.name ?? ''} · ${sleepPosName.value}`,
 );
 
 // 回放引擎
@@ -170,11 +170,10 @@ const metrics = computed(() => {
   return computeMetrics(currentFrame.value, bgForMetrics.value, 20);
 });
 
-// 视口高度 → 热力图最大高度（保证底部曲线图在 900px 高视口内也可见）
+// 视口高度 → 热力图最大高度（保证底部曲线图可见）
 const viewportH = ref(window.innerHeight);
 const heatmapMaxHeight = computed(() => Math.max(260, viewportH.value - 450));
 
-// 当前数据源的全部帧 + 对应空载背景（动态帧用 wzh 自己的背景）
 const framesList = computed<ArrayLike<number>[]>(() =>
   sourceType.value === 'dynamic'
     ? (data.value?.dynamic.frames ?? [])
@@ -183,10 +182,9 @@ const framesList = computed<ArrayLike<number>[]>(() =>
 const bgForMetrics = computed<ArrayLike<number> | null>(() =>
   sourceType.value === 'dynamic' ? (data.value?.dynamic.bg ?? null) : (person.value?.bg ?? null),
 );
-// 逐帧指标历史（回放顺序），用于指标卡 sparkline 与时间曲线
 const history = computed(() => metricsHistory(framesList.value, bgForMetrics.value, 20));
 
-// 区域与脊柱标注（当前动作；同一动作内标注基本恒定）
+// 区域与脊柱标注
 const regions = computed(() =>
   sourceType.value === 'static' && currentAction.value?.region
     ? parseRegion(currentAction.value.region)
@@ -201,7 +199,7 @@ const spine = computed(() =>
 const showRegions = ref(true);
 const showSpine = ref(true);
 const showCalf = ref(false);
-const showDynLabels = ref(false); // 动态文件内 0/1/2 标签（官方：忽视，仅参考展示）
+const showDynLabels = ref(false);
 const selectedRegion = ref<number | null>(null);
 const hoverRegion = ref<number | null>(null);
 
@@ -209,20 +207,17 @@ const hoverRegion = ref<number | null>(null);
 const airbagSource = new SimulatedAirbagSource();
 
 function onAirbagPreset(name: string) {
-  // 演示联动：腰部支撑增强 → 选中腰部区域，展示其压力曲线与区域高亮
   if (name === '腰部支撑增强') {
     showRegions.value = true;
     selectedRegion.value = 2;
   }
 }
 
-// 当前帧区域统计（按平均净压力降序）
 const regionStats = computed(() => {
   if (!regions.value || !currentFrame.value.length) return [];
   return regionStatsAll(currentFrame.value, bgForMetrics.value, regions.value, 20);
 });
 
-// 选定区域的逐帧平均压力曲线
 const regionCurve = computed(() => {
   if (selectedRegion.value === null || !regions.value) return [];
   const rg = regions.value[selectedRegion.value];
@@ -236,14 +231,22 @@ const selectedRegionName = computed(() => {
   return rg?.valid ? rg.name : '';
 });
 const selectedRegionColor = computed(() => {
-  if (selectedRegion.value === null || !regions.value) return '#8b949e';
+  if (selectedRegion.value === null || !regions.value) return '#7a8794';
   const rg = regions.value[selectedRegion.value];
-  return rg?.valid ? (REGION_COLORS[rg.name] ?? '#8b949e') : '#8b949e';
+  return rg?.valid ? (REGION_COLORS[rg.name] ?? '#7a8794') : '#7a8794';
+});
+
+// 时钟（仪器面板元素）
+const now = ref(new Date());
+const clockText = computed(() => {
+  const d = now.value;
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':');
 });
 
 // rAF 驱动
 let rafId = 0;
 let lastTs = 0;
+let lastSec = 0;
 function loop(ts: number) {
   if (lastTs > 0) {
     const dt = ts - lastTs;
@@ -251,6 +254,10 @@ function loop(ts: number) {
     airbagSource.tick(dt);
   }
   lastTs = ts;
+  if (ts - lastSec >= 1000) {
+    lastSec = ts;
+    now.value = new Date();
+  }
   playing.value = controller.value?.isPlaying ?? false;
   rafId = requestAnimationFrame(loop);
 }
@@ -301,7 +308,7 @@ const scaleOptions: { value: ScaleMode; label: string }[] = [
 ];
 const speedOptions = [0.5, 1, 2, 4];
 
-// URL hash 状态（便于截图/演示直链）：#type=dynamic&person=wzh&action=2&frame=10&mode=grid&scale=auto
+// URL hash 状态（便于直链演示）
 function applyHash() {
   const h = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
   if (h.get('type') === 'dynamic') sourceType.value = 'dynamic';
@@ -339,25 +346,22 @@ function applyHash() {
 const legendTicks = computed<number[] | null>(() => {
   if (scale.value === 'fixed250') return [0, 50, 100, 150, 200, 250];
   if (scale.value === 'fixed500') return [0, 100, 200, 300, 400, 500];
-  return null; // 自动量程
+  return null;
 });
 const legendCaption = computed(() => {
-  if (scale.value === 'auto') return `自动 · 帧最大 ${metrics.value?.maxRaw ?? '-'}`;
+  if (scale.value === 'auto') return `自动量程 · 峰值 ${metrics.value?.maxRaw ?? '-'}`;
   return '固定量程';
 });
-
 const legendCanvas = ref<HTMLCanvasElement | null>(null);
 
 onMounted(async () => {
   window.addEventListener('resize', () => (viewportH.value = window.innerHeight));
   await loadData();
-  // 默认选中第一个非空载动作（仰卧），空载（无人）作为可选项而非默认首屏
   if (person.value) {
     const i = person.value.actions.findIndex((a) => a.action !== 0);
     if (i >= 0) actionIdx.value = i;
   }
   applyHash();
-  // 图例渐变色（turbo，0-250）
   const c = legendCanvas.value;
   if (c) {
     c.width = 256;
@@ -375,61 +379,57 @@ watch(() => frameCount.value, (n) => {
   if (frameIdx.value >= n) frameIdx.value = n - 1;
 });
 watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
-
-const phases = [
-  { id: 1, name: '读取数据', done: true },
-  { id: 2, name: '静态热力图', done: true },
-  { id: 3, name: '帧动画', done: true },
-  { id: 4, name: '实时指标与曲线', done: true },
-  { id: 5, name: '区域分析', done: true },
-  { id: 6, name: '完整大屏 UI', done: true },
-  { id: 7, name: '气囊模块', done: true },
-  { id: 8, name: '最终 Demo', done: true },
-];
 </script>
 
 <template>
   <div class="shell">
     <header class="topbar">
-      <h1>智能床垫实时监测系统</h1>
-      <div class="badges">
-        <span class="badge replay">● 回放 · 本地历史数据</span>
-        <span class="badge" :class="dataSource === 'simulated' ? 'sim' : ''">
-          ● 数据 · {{ dataSource === 'demo' ? '真实子集' : '内置模拟' }}
-        </span>
-        <span class="badge sim">● 气囊 · 模拟数据</span>
-        <span class="badge">v0.8.0 · Phase 8</span>
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="18" rx="3" />
+          <path d="M4 12h3l1.5-4 3 8 3-6 1.5 2H20" />
+        </svg>
+        <div class="brand-text">
+          <span class="brand-name">SleepMatrix</span>
+          <span class="brand-sub">睡眠压力监测台</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="pill live"><i class="dot" :class="{ pulse: playing }"></i>数据回放 · 历史记录</span>
+        <span v-if="dataSource === 'simulated'" class="pill warn"><i class="dot"></i>演示模式 · 内置数据</span>
+        <span class="pill warn"><i class="dot"></i>气囊 · 模拟信号</span>
+        <span class="clock num">{{ clockText }}</span>
       </div>
     </header>
 
     <main class="content">
       <aside class="panel left">
-        <h2>数据源</h2>
+        <h2>数据</h2>
         <div class="field">
-          <span>数据集</span>
+          <span class="label">模式</span>
           <div class="seg">
-            <button :class="{ active: dataSource === 'demo' }" @click="selectDataSource('demo')">真实子集</button>
-            <button :class="{ active: dataSource === 'simulated' }" @click="selectDataSource('simulated')">内置模拟</button>
+            <button :class="{ active: dataSource === 'demo' }" @click="selectDataSource('demo')">真实记录</button>
+            <button :class="{ active: dataSource === 'simulated' }" @click="selectDataSource('simulated')">内置演示</button>
           </div>
         </div>
         <div class="field">
-          <span>类型</span>
+          <span class="label">回放</span>
           <div class="seg">
-            <button :class="{ active: sourceType === 'static' }" @click="selectSource('static')">静态动作</button>
-            <button :class="{ active: sourceType === 'dynamic' }" @click="selectSource('dynamic')">动态过程</button>
+            <button :class="{ active: sourceType === 'static' }" @click="selectSource('static')">姿态动作</button>
+            <button :class="{ active: sourceType === 'dynamic' }" @click="selectSource('dynamic')">翻身过程</button>
           </div>
         </div>
         <template v-if="sourceType === 'static'">
           <label class="field">
-            <span>用户</span>
+            <span class="label">受测者</span>
             <select :value="personIdx" @change="selectPerson(Number(($event.target as HTMLSelectElement).value))">
               <option v-for="(p, i) in data?.people" :key="p.name" :value="i">
-                {{ p.name }}（{{ p.height ?? '?' }}cm / {{ p.weight ?? '?' }}kg）
+                {{ p.name }} · {{ p.height ?? '?' }} cm / {{ p.weight ?? '?' }} kg
               </option>
             </select>
           </label>
           <label class="field">
-            <span>动作</span>
+            <span class="label">姿态</span>
             <select :value="actionIdx" @change="selectAction(Number(($event.target as HTMLSelectElement).value))">
               <option v-for="(a, i) in person?.actions" :key="a.action" :value="i">
                 {{ actionLabel(a) }}
@@ -438,7 +438,7 @@ const phases = [
           </label>
         </template>
         <div class="field">
-          <span>显示模式</span>
+          <span class="label">渲染</span>
           <div class="seg">
             <button v-for="m in modeOptions" :key="m.value" :class="{ active: mode === m.value }" @click="mode = m.value">
               {{ m.label }}
@@ -446,7 +446,7 @@ const phases = [
           </div>
         </div>
         <div class="field">
-          <span>量程</span>
+          <span class="label">量程</span>
           <div class="seg">
             <button v-for="s in scaleOptions" :key="s.value" :class="{ active: scale === s.value }" @click="scale = s.value">
               {{ s.label }}
@@ -454,34 +454,37 @@ const phases = [
           </div>
         </div>
         <div class="field">
-          <span>标注叠加</span>
+          <span class="label">图层</span>
           <div class="checks">
-            <label><input type="checkbox" v-model="showRegions" /> 区域框</label>
-            <label><input type="checkbox" v-model="showSpine" /> 脊柱线</label>
-            <label><input type="checkbox" v-model="showCalf" /> 小腿部<span class="tiny">(仅3人有标注)</span></label>
+            <label><input type="checkbox" v-model="showRegions" /> 部位区域</label>
+            <label><input type="checkbox" v-model="showSpine" /> 脊柱参考线</label>
+            <label><input type="checkbox" v-model="showCalf" /> 小腿区域<span class="tiny">3 人已标注</span></label>
             <label v-if="sourceType === 'dynamic'">
-              <input type="checkbox" v-model="showDynLabels" /> 文件内睡姿标签<span class="tiny">(仅供参考)</span>
+              <input type="checkbox" v-model="showDynLabels" /> 原始参考标签<span class="tiny">文件自带</span>
             </label>
           </div>
         </div>
         <div class="legend">
           <canvas ref="legendCanvas" class="legend-canvas"></canvas>
-          <div v-if="legendTicks" class="legend-ticks">
+          <div v-if="legendTicks" class="legend-ticks num">
             <span v-for="t in legendTicks" :key="t">{{ t }}</span>
           </div>
-          <div v-else class="legend-caption">{{ legendCaption }}</div>
+          <div v-else class="legend-caption">
+            <span>自动量程 · 峰值</span>
+            <span class="num">{{ metrics ? Math.round(metrics.maxRaw) : '-' }}</span>
+          </div>
         </div>
       </aside>
 
       <section class="center">
         <div class="heatmap-panel">
           <div class="heatmap-title">
-            <span>{{ sourceLabel }}</span>
+            <span class="src">{{ sourceLabel }}</span>
             <span class="title-right">
-              <span v-if="hoverCell" class="hover-tag">
-                ({{ hoverCell.row }}, {{ hoverCell.col }}) 净压 = {{ hoverCell.value }}
+              <span v-if="hoverCell" class="hover-tag num">
+                {{ hoverCell.row }},{{ hoverCell.col }} · 净压 {{ hoverCell.value }}
               </span>
-              <span class="frame-tag">第 {{ frameIdx }} 帧</span>
+              <span class="frame-tag num">{{ String(frameIdx).padStart(2, '0') }} / {{ frameCount - 1 }}</span>
             </span>
           </div>
           <HeatmapCanvas
@@ -500,20 +503,25 @@ const phases = [
             @region-select="selectedRegion = $event"
           />
           <div class="controls">
-            <button class="ctl" title="上一帧" @click="stepPrev">⏮</button>
-            <button class="ctl play" :title="playing ? '暂停' : '播放'" @click="togglePlay">
-              {{ playing ? 'Ⅱ' : '▶' }}
+            <button class="ctl" title="上一帧" aria-label="上一帧" @click="stepPrev">
+              <svg viewBox="0 0 16 16" fill="currentColor"><path d="M10.5 3.5 6 8l4.5 4.5" /></svg>
             </button>
-            <button class="ctl" title="下一帧" @click="stepNext">⏭</button>
+            <button class="ctl play" :title="playing ? '暂停' : '播放'" :aria-label="playing ? '暂停' : '播放'" @click="togglePlay">
+              <svg v-if="playing" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.6" height="10" rx="1" /><rect x="9.4" y="3" width="2.6" height="10" rx="1" /></svg>
+              <svg v-else viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.8v8.4a.5.5 0 0 0 .76.43l6.9-4.2a.5.5 0 0 0 0-.86L5.76 3.37A.5.5 0 0 0 5 3.8Z" /></svg>
+            </button>
+            <button class="ctl" title="下一帧" aria-label="下一帧" @click="stepNext">
+              <svg viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 3.5 10 8l-4.5 4.5" /></svg>
+            </button>
             <input
               class="progress"
               type="range"
               :min="0"
               :max="frameCount - 1"
               :value="frameIdx"
+              aria-label="回放进度"
               @input="onSeek"
             />
-            <span class="frame-num">{{ frameIdx }} / {{ frameCount - 1 }}</span>
             <div class="speed-seg">
               <button
                 v-for="s in speedOptions"
@@ -529,32 +537,30 @@ const phases = [
       </section>
 
       <aside class="panel right">
-        <h2>睡眠状态</h2>
+        <h2>睡姿</h2>
         <SleepPoseCard
           :pose="sleepPosName"
           :duration-frames="poseDurationFrames"
           :fps="10"
-          :note="sourceType === 'dynamic' ? '动态过程：文件内 0/1/2 标签行按官方说明忽略' : currentAction?.action === 0 ? '空载帧：扣背景后有效接触点 < 50 判定为离床（自研启发式）' : undefined"
+          :note="sourceType === 'dynamic' ? '翻身过程 · 未使用文件内标签' : currentAction?.action === 0 ? '空载记录 · 判定为离床' : undefined"
         />
-        <h2>实时压力指标</h2>
+        <h2>压力指标</h2>
         <MetricCards :metrics="metrics" :history="history" />
-        <h2 style="margin-top: 18px">区域压力排行<span class="sub">（平均净压力）</span></h2>
+        <h2 class="mt">部位受力<span class="sub">按平均净压排序</span></h2>
         <RegionRanking :stats="regionStats" :selected="selectedRegion" :hovered="hoverRegion" @select="selectedRegion = $event" />
-        <p class="hint">
-          热力图与读数均为扣除空载背景后的净压力；回放基准 10 fps（采集帧率约 2.3 fps）；行 0 = 头端，列 12 = 中线。
-        </p>
+        <p class="hint">读数与热力图均为扣除空载后的净压力</p>
         <p
           v-if="scale !== 'auto' && metrics && metrics.maxRaw > (scale === 'fixed250' ? 250 : 500)"
           class="warn"
         >
-          ⚠ 帧最大压力 {{ metrics.maxRaw }} 超出当前量程，峰值区被削顶显示
+          峰值超出量程 · 顶部已截断
         </p>
       </aside>
     </main>
 
     <section class="bottom">
       <div class="chart-panel">
-        <h2>压力指标趋势（随回放实时更新）</h2>
+        <h2>压力趋势</h2>
         <PoseTimeline
           v-if="sourceType === 'dynamic' && showDynLabels && data"
           :labels="data.dynamic.labels"
@@ -575,10 +581,6 @@ const phases = [
         <AirbagPanel :source="airbagSource" @preset="onAirbagPreset" />
       </div>
     </section>
-
-    <footer class="footer">
-      <span v-for="p in phases" :key="p.id" class="phase" :class="{ done: p.done }">P{{ p.id }} {{ p.name }}</span>
-    </footer>
   </div>
 </template>
 
@@ -588,175 +590,217 @@ const phases = [
   flex-direction: column;
   height: 100vh;
 }
+
+/* ---------- 顶栏 ---------- */
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  background: linear-gradient(180deg, var(--bg-elev), var(--panel));
 }
-.topbar h1 {
-  font-size: 20px;
-  font-weight: 600;
-}
-.badges {
+.brand {
   display: flex;
+  align-items: center;
   gap: 10px;
 }
-.badge {
-  font-size: 13px;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px 12px;
-}
-.badge.replay {
+.logo {
+  width: 30px;
+  height: 30px;
   color: var(--accent);
-  border-color: var(--accent);
 }
-.badge.sim {
-  color: #d29922;
-  border-color: #d29922;
-}
-.bottom {
-  display: flex;
-  gap: 16px;
-  margin: 0 20px 16px;
-  min-height: 0;
-}
-.chart-panel {
-  flex: 1;
-  min-width: 0;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 16px;
-  height: 220px;
+.brand-text {
   display: flex;
   flex-direction: column;
+  line-height: 1.15;
 }
-.chart-panel h2 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
+.brand-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
-.chart-panel :deep(.chart-wrap) {
-  flex: 1;
+.brand-sub {
+  font-size: 11px;
+  color: var(--text-2);
 }
-.airbag-panel {
-  width: 400px;
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 3px 10px;
+}
+.pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
   flex: none;
-  height: 220px;
 }
+.pill .dot.pulse {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.pill.warn .dot {
+  background: var(--c-amber);
+}
+.clock {
+  font-size: 14px;
+  color: var(--text);
+  letter-spacing: 0.04em;
+  margin-left: 4px;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pill .dot.pulse { animation: none; }
+}
+
+/* ---------- 三栏主体 ---------- */
 .content {
   flex: 1;
   display: grid;
-  grid-template-columns: 240px 1fr 260px;
+  grid-template-columns: 236px 1fr 264px;
   grid-template-rows: minmax(0, 1fr);
-  gap: 16px;
-  padding: 16px 20px;
+  gap: 14px;
+  padding: 14px 20px;
   min-height: 0;
   overflow: hidden;
 }
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px 16px 20px;
+  border-radius: var(--r-panel);
+  padding: 14px 16px 22px;
   overflow: auto;
   min-height: 0;
 }
 .panel h2 {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.06em;
   margin-bottom: 10px;
+}
+.panel h2.mt {
+  margin-top: 16px;
 }
 .field {
   display: block;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
-.field > span {
+.field .label {
   display: block;
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 11.5px;
+  color: var(--text-3);
   margin-bottom: 6px;
 }
 select {
   width: 100%;
-  background: var(--bg);
+  appearance: none;
+  background: var(--panel-inset);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 13px;
+  border-radius: var(--r-ctl);
+  padding: 7px 26px 7px 10px;
+  font-size: 12.5px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239fb0bc' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+select:hover {
+  border-color: var(--border-strong);
 }
 .seg {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
 }
 .seg button {
   flex: 1;
-  min-width: 56px;
-  background: var(--bg);
-  color: var(--text-secondary);
+  min-width: 52px;
+  background: var(--panel-inset);
+  color: var(--text-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-ctl);
   padding: 5px 6px;
   font-size: 12px;
+  font-family: var(--font-ui);
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.seg button:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 .seg button.active {
   color: var(--accent);
   border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .checks {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
+  gap: 7px;
+  font-size: 12.5px;
   color: var(--text);
 }
 .checks label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   cursor: pointer;
 }
 .checks input {
   accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
 }
 .tiny {
-  font-size: 10px;
-  color: var(--text-secondary);
+  font-size: 10.5px;
+  color: var(--text-3);
 }
 .sub {
   font-size: 11px;
   font-weight: 400;
-  color: var(--text-secondary);
+  color: var(--text-3);
   margin-left: 6px;
+  letter-spacing: 0;
 }
 .legend-canvas {
   width: 100%;
-  height: 14px;
-  border-radius: 4px;
+  height: 12px;
+  border-radius: 3px;
   image-rendering: pixelated;
+  border: 1px solid var(--border);
 }
 .legend-ticks {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  color: var(--text-secondary);
+  font-size: 10.5px;
+  color: var(--text-3);
   margin-top: 4px;
 }
 .legend-caption {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--text-3);
   margin-top: 4px;
   text-align: center;
 }
+
+/* ---------- 中央热力图（仪器面板） ---------- */
 .center {
   display: flex;
   align-items: center;
@@ -766,36 +810,38 @@ select {
 }
 .heatmap-panel {
   width: 100%;
-  max-width: 620px;
+  max-width: 640px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px;
+  border-radius: var(--r-panel);
+  padding: 12px 14px 14px;
 }
 .heatmap-title {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  color: var(--text);
+  align-items: baseline;
   margin-bottom: 10px;
 }
-.frame-tag {
-  font-size: 12px;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 8px;
+.src {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
 }
 .title-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .hover-tag {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--accent);
-  font-variant-numeric: tabular-nums;
+}
+.frame-tag {
+  font-size: 11.5px;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 8px;
 }
 .controls {
   display: flex;
@@ -804,92 +850,105 @@ select {
   margin-top: 12px;
 }
 .ctl {
-  background: var(--bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-inset);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  width: 34px;
+  border-radius: var(--r-ctl);
+  width: 32px;
   height: 30px;
   cursor: pointer;
-  font-size: 14px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ctl svg {
+  width: 15px;
+  height: 15px;
+}
+.ctl:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elev);
 }
 .ctl.play {
-  border-color: var(--accent);
   color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .progress {
   flex: 1;
   accent-color: var(--accent);
-}
-.frame-num {
-  font-size: 12px;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-  min-width: 56px;
-  text-align: right;
 }
 .speed-seg {
   display: flex;
   gap: 4px;
 }
 .speed-seg button {
-  background: var(--bg);
-  color: var(--text-secondary);
+  background: var(--panel-inset);
+  color: var(--text-3);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 12px;
+  border-radius: var(--r-ctl);
+  padding: 3px 8px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.speed-seg button:hover {
+  color: var(--text-2);
+  border-color: var(--border-strong);
 }
 .speed-seg button.active {
   color: var(--accent);
   border-color: var(--accent);
+  background: var(--accent-soft);
 }
-.info {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  font-size: 13px;
-}
-.info > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-.info dt {
-  color: var(--text-secondary);
-}
-.info dd {
-  font-variant-numeric: tabular-nums;
-}
+
+/* ---------- 右栏 ---------- */
 .hint {
-  margin-top: 14px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.6;
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.5;
 }
 .warn {
-  margin-top: 10px;
-  font-size: 12px;
-  color: #d29922;
-  line-height: 1.6;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--c-amber);
+  line-height: 1.5;
 }
-.footer {
+
+/* ---------- 底部：趋势 + 气囊 ---------- */
+.bottom {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 20px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
+  gap: 14px;
+  margin: 0 20px 14px;
+  min-height: 0;
 }
-.phase {
-  color: var(--text-secondary);
+.chart-panel {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 10px;
+  border-radius: var(--r-panel);
+  padding: 10px 16px 12px;
+  height: 218px;
+  display: flex;
+  flex-direction: column;
 }
-.phase.done {
-  color: var(--accent);
-  border-color: var(--accent);
+.chart-panel h2 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.chart-panel :deep(.chart-wrap) {
+  flex: 1;
+}
+.airbag-panel {
+  width: 396px;
+  flex: none;
+  height: 218px;
 }
 </style>

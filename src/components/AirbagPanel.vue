@@ -42,7 +42,7 @@ const right = computed(() => AIRBAG_ZONES.filter((z) => z.side === '右半区'))
         class="sim-badge"
         title="条带布局依据气囊-传感器布置图编号体系；条带与部位对应为推测；压力数据为回放，不受模拟气囊影响"
       >
-        模拟数据 · 无真实气囊接口
+        模拟信号 · 未接入设备
       </span>
     </div>
     <div class="presets">
@@ -104,9 +104,9 @@ const right = computed(() => AIRBAG_ZONES.filter((z) => z.side === '右半区'))
 }
 .sim-badge {
   font-size: 10.5px;
-  color: #d29922;
-  border: 1px solid #d29922;
-  border-radius: 999px;
+  color: var(--c-amber);
+  border: 1px solid var(--c-amber);
+  border-radius: var(--r-pill);
   padding: 1px 8px;
 }
 .presets {

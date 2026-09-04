@@ -12,14 +12,14 @@ const props = defineProps<{
 }>();
 
 const POSE_COLORS: Record<string, string> = {
-  仰卧: '#58A6FF',
-  俯卧: '#BC8CFF',
-  左侧卧: '#3FB950',
-  右侧卧: '#D29922',
-  离床: '#8B949E',
-  '离床 · 无人': '#8B949E',
-  在床: '#39C5CF',
-  动态过程: '#39C5CF',
+  仰卧: '#4da6ff',
+  俯卧: '#e6b84c',
+  左侧卧: '#2fd6b6',
+  右侧卧: '#ff7a6b',
+  离床: '#7a8794',
+  '离床 · 无人': '#7a8794',
+  在床: '#2fd6b6',
+  动态过程: '#2fd6b6',
 };
 
 const color = computed(() => POSE_COLORS[props.pose] ?? '#8B949E');
@@ -31,7 +31,14 @@ function stroke() {
 </script>
 
 <template>
-  <div class="pose-card" :style="{ borderColor: color, background: `linear-gradient(135deg, ${color}22, transparent 60%)` }">
+  <div
+    class="pose-card"
+    :style="{
+      borderColor: color,
+      boxShadow: `inset 0 0 0 1px ${color}14, 0 0 18px ${color}22`,
+    }"
+  >
+    <div class="lamp" :style="{ background: color, boxShadow: `0 0 12px ${color}90` }"></div>
     <svg class="icon" viewBox="0 0 64 64" :stroke="color" stroke-width="2" fill="none">
       <!-- 床 -->
       <rect x="8" y="46" width="48" height="10" rx="3" :stroke-dasharray="pose === '离床 · 无人' || pose === '离床' ? '4 3' : 'none'" />
@@ -66,7 +73,7 @@ function stroke() {
     </svg>
     <div class="body">
       <div class="pose-name" :style="{ color }">{{ pose }}</div>
-      <div class="duration">持续 {{ durationFrames }} 帧 · {{ seconds }} 秒</div>
+      <div class="duration num">持续 {{ durationFrames }} 帧 · {{ seconds }} 秒</div>
       <div v-if="note" class="note">{{ note }}</div>
     </div>
   </div>
@@ -77,10 +84,19 @@ function stroke() {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1.5px solid;
-  border-radius: 10px;
-  padding: 8px 10px;
+  border: 1px solid;
+  border-radius: var(--r-card);
+  padding: 9px 11px;
   margin-bottom: 10px;
+  background: var(--panel-inset);
+}
+.lamp {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  align-self: flex-start;
+  margin-top: 6px;
 }
 .icon {
   width: 42px;
@@ -91,18 +107,20 @@ function stroke() {
   min-width: 0;
 }
 .pose-name {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
+  letter-spacing: 0.01em;
 }
 .duration {
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 11.5px;
+  color: var(--text-2);
   margin-top: 2px;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 .note {
   font-size: 10px;
-  color: var(--text-secondary);
+  color: var(--text-3);
   margin-top: 2px;
   line-height: 1.4;
 }

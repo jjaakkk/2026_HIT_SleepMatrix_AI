@@ -22,35 +22,34 @@ const cards: CardDef[] = [
   {
     key: 'maxRaw',
     label: '最大压力',
-    unit: '传感器读数',
-    color: '#ff7a1a',
+    unit: '原始读数',
+    color: '#ff7a6b',
     value: (m) => m.maxRaw,
     fmt: (v) => v.toFixed(0),
   },
   {
     key: 'maxNet',
     label: '净最大压力',
-    unit: '扣空载后',
-    color: '#ff3b30',
+    unit: '扣除空载',
+    color: '#e6b84c',
     value: (m) => m.maxNet,
     fmt: (v) => v.toFixed(0),
   },
   {
     key: 'meanNet',
     label: '平均压力',
-    unit: '有效接触点均值',
-    color: '#39c5cf',
+    unit: '接触点均值',
+    color: '#2fd6b6',
     value: (m) => m.meanNet,
     fmt: (v) => v.toFixed(1),
   },
   {
     key: 'contact',
-    label: '接触面积 / 有效点数',
-    unit: '占 1056 点的 %',
-    color: '#a29bfe',
+    label: '接触面积',
+    unit: '1056 点占比 · 自定义口径',
+    color: '#4da6ff',
     value: (m) => contactIndex(m),
     fmt: (v) => v.toFixed(1),
-    note: '指数为候选定义，待确认',
   },
 ];
 
@@ -83,7 +82,7 @@ function drawSparkline(key: string) {
   const range = max - min || 1;
   const color = cards.find((x) => x.key === key)!.color;
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1.4;
   ctx.beginPath();
   slice.forEach((v, i) => {
     const x = (i / (n - 1)) * w;
@@ -104,17 +103,15 @@ watch(() => props.history, () => {
 
 <template>
   <div class="cards">
-    <div v-for="c in cards" :key="c.key" class="card">
+    <div v-for="c in cards" :key="c.key" class="card" :style="{ borderTopColor: c.color }">
       <div class="card-head">
-        <span class="dot" :style="{ background: c.color }"></span>
         <span class="label">{{ c.label }}</span>
       </div>
-      <div class="value" :style="{ color: c.color }">
+      <div class="value num" :style="{ color: c.color }">
         {{ metrics ? c.fmt(c.value(metrics)) : '—' }}
       </div>
-      <div class="unit">{{ c.unit }}</div>
+      <div class="unit" :title="c.unit">{{ c.unit }}</div>
       <canvas :ref="setRef(c.key)" class="spark"></canvas>
-      <div v-if="c.note" class="note">{{ c.note }}</div>
     </div>
   </div>
 </template>
@@ -123,55 +120,47 @@ watch(() => props.history, () => {
 .cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 8px;
 }
 .card {
-  background: var(--bg);
+  background: var(--panel-inset);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 9px;
+  border-top: 2px solid var(--border);
+  border-radius: var(--r-card);
+  padding: 8px 10px 7px;
   min-width: 0;
 }
 .card-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex: none;
+.label {
+  font-size: 12px;
+  color: var(--text-2);
 }
 .value {
-  font-size: 19px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+  font-size: 21px;
+  font-weight: 600;
   line-height: 1.1;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 .unit {
-  font-size: 10.5px;
-  color: var(--text-secondary);
-  margin-top: 1px;
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .spark {
   width: 100%;
-  height: 14px;
-  margin-top: 3px;
+  height: 15px;
+  margin-top: 4px;
   display: block;
-}
-.note {
-  font-size: 10px;
-  color: var(--text-secondary);
-  margin-top: 1px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  opacity: 0.85;
 }
 </style>

@@ -18,6 +18,12 @@ test('turboColor 端点与插值', () => {
   assert.ok(mid.every((v) => v >= 0 && v <= 1));
 });
 
+test('turboColor/valueToColor：NaN 按 0 处理（空帧防御）', () => {
+  assert.deepEqual(turboColor(NaN), TURBO[0]);
+  assert.deepEqual(valueToColor(NaN, 250, 1), TURBO[0]);
+  assert.deepEqual(valueToColor(Infinity, 250, 1), TURBO[255]);
+});
+
 test('valueToColor：越界 clamp 与压扩', () => {
   assert.deepEqual(valueToColor(9999, 250, 1), TURBO[255]);
   assert.deepEqual(valueToColor(-5, 250, 1), TURBO[0]);

@@ -1,4 +1,4 @@
-import { COLS, ROWS } from '../core/types.ts';
+import { COLS, ROWS, CELLS } from '../core/types.ts';
 import { TURBO } from './turbo.ts';
 
 export type HeatmapMode = 'smooth' | 'weak' | 'grid';
@@ -60,9 +60,10 @@ export function bilinearSample(frame: ArrayLike<number>, fx: number, fy: number)
   return top + (bottom - top) * ty;
 }
 
-/** turbo 色带取值（t ∈ [0,1]，线性插值相邻 LUT 项） */
+/** turbo 色带取值（t ∈ [0,1]，线性插值相邻 LUT 项；非数值按 0 处理） */
 export function turboColor(t: number): [number, number, number] {
-  const idx = Math.min(Math.max(t, 0), 1) * 255;
+  const tc = Number.isFinite(t) ? Math.min(Math.max(t, 0), 1) : 0;
+  const idx = tc * 255;
   const i = Math.min(Math.floor(idx), 254);
   const f = idx - i;
   const a = TURBO[i];
@@ -89,12 +90,16 @@ export function renderHeatmap(
   opts: HeatmapOptions,
 ): { frameMax: number; scaleMax: number } {
   const { mode, scale, width, height } = opts;
+  ctx.clearRect(0, 0, width, height);
+
+  // 数据未就绪（空帧）时只清空画布，避免 NaN 进入色带查表
+  if (!frame || frame.length < CELLS) {
+    return { frameMax: 0, scaleMax: scale === 'auto' ? AUTO_SCALE_MIN : FIXED_MAX[scale] };
+  }
   const frameMax = computeFrameMax(frame);
   const scaleMax =
     scale === 'auto' ? Math.max(frameMax, AUTO_SCALE_MIN) : FIXED_MAX[scale];
   const gamma = GAMMA[mode];
-
-  ctx.clearRect(0, 0, width, height);
 
   if (mode === 'grid') {
     const cw = width / COLS;

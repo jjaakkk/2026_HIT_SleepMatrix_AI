@@ -69,20 +69,18 @@ async function loadData(): Promise<void> {
 function selectDataSource(t: 'demo' | 'simulated'): void {
   if (dataSource.value === t) return;
   dataSource.value = t;
-  if (t === 'simulated') {
-    data.value = simulatedData();
+  const reset = () => {
     personIdx.value = 0;
-    actionIdx.value = 0;
+    actionIdx.value = person.value?.actions.findIndex((a) => a.action !== 0) ?? 0;
     selectedRegion.value = null;
     rebuildController();
+  };
+  if (t === 'simulated') {
+    data.value = simulatedData();
+    reset();
   } else {
     data.value = null;
-    loadData().then(() => {
-      personIdx.value = 0;
-      actionIdx.value = 0;
-      selectedRegion.value = null;
-      rebuildController();
-    });
+    loadData().then(reset);
   }
 }
 
@@ -312,10 +310,13 @@ function applyHash() {
     const pi = data.value.people.findIndex((p) => p.name === pn);
     if (pi >= 0) personIdx.value = pi;
   }
-  const a = Number(h.get('action'));
-  if (!Number.isNaN(a) && person.value) {
-    const idx = person.value.actions.findIndex((x) => x.action === a);
-    if (idx >= 0) actionIdx.value = idx;
+  const aRaw = h.get('action');
+  if (aRaw !== null && person.value) {
+    const a = Number(aRaw);
+    if (!Number.isNaN(a)) {
+      const idx = person.value.actions.findIndex((x) => x.action === a);
+      if (idx >= 0) actionIdx.value = idx;
+    }
   }
   if (h.get('mode') === 'grid' || h.get('mode') === 'weak') mode.value = h.get('mode') as HeatmapMode;
   if (h.get('scale') === 'auto' || h.get('scale') === 'fixed500') scale.value = h.get('scale') as ScaleMode;
@@ -327,8 +328,11 @@ function applyHash() {
     if (!Number.isNaN(rg) && rg >= 0 && rg <= 5) selectedRegion.value = rg;
   }
   rebuildController();
-  const f = Number(h.get('frame'));
-  if (!Number.isNaN(f)) controller.value?.seek(f);
+  const fRaw = h.get('frame');
+  if (fRaw !== null) {
+    const f = Number(fRaw);
+    if (!Number.isNaN(f)) controller.value?.seek(f);
+  }
   if (h.get('autoplay') === '1') controller.value?.play();
 }
 
@@ -347,6 +351,11 @@ const legendCanvas = ref<HTMLCanvasElement | null>(null);
 onMounted(async () => {
   window.addEventListener('resize', () => (viewportH.value = window.innerHeight));
   await loadData();
+  // 默认选中第一个非空载动作（仰卧），空载（无人）作为可选项而非默认首屏
+  if (person.value) {
+    const i = person.value.actions.findIndex((a) => a.action !== 0);
+    if (i >= 0) actionIdx.value = i;
+  }
   applyHash();
   // 图例渐变色（turbo，0-250）
   const c = legendCanvas.value;

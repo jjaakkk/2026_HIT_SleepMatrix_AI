@@ -59,8 +59,10 @@ const dynDir = path.join(root, '睡姿数据', DYNAMIC_PERSON);
 const dynFile = fs.readdirSync(dynDir).find((f) => f.includes('动态') && f.endsWith('.txt'));
 if (!dynFile) throw new Error(`${DYNAMIC_PERSON} 目录下未找到动态文件`);
 const dyn = parseTxt(load(`睡姿数据/${DYNAMIC_PERSON}/${dynFile}`));
+const dynBg = meanBackground(parseTxt(load(`睡姿数据/${DYNAMIC_PERSON}/${DYNAMIC_PERSON}_空载.txt`)).frames);
 const dynamic = {
   person: DYNAMIC_PERSON,
+  bg: Array.from(dynBg), // 动态帧指标同样扣该人空载背景
   frames: dyn.frames.slice(0, DYNAMIC_FRAMES).map((f) => Array.from(f)),
   labels: dyn.labels.slice(0, DYNAMIC_FRAMES), // 官方：忽视，仅保留
 };

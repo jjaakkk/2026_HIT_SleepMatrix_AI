@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, computed } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch, computed } from 'vue';
 import { renderHeatmap, pickCell, computeFrameMax } from '../render/heatmap.ts';
 import type { HeatmapMode, ScaleMode } from '../render/heatmap.ts';
 import { COLS, ROWS } from '../core/types.ts';
@@ -8,6 +8,8 @@ const props = defineProps<{
   frame: ArrayLike<number>;
   mode: HeatmapMode;
   scale: ScaleMode;
+  /** 画布最大高度（CSS px，用于保证底部曲线图可见） */
+  maxHeight?: number;
 }>();
 
 const emit = defineEmits<{ hover: [info: { row: number; col: number; value: number } | null] }>();
@@ -54,11 +56,28 @@ function onLeave() {
 
 onMounted(() => {
   const wrap = canvasRef.value?.parentElement;
-  if (wrap) cssWidth.value = wrap.clientWidth;
+  if (wrap) {
+    const w = wrap.clientWidth;
+    const h = props.maxHeight ?? Infinity;
+    cssWidth.value = Math.min(w, (h * COLS) / ROWS);
+  }
   draw();
+  window.addEventListener('resize', onResize);
 });
 
-watch(() => [props.frame, props.mode, props.scale, cssWidth.value], draw);
+function onResize() {
+  const wrap = canvasRef.value?.parentElement;
+  if (wrap) {
+    const w = wrap.clientWidth;
+    const h = props.maxHeight ?? Infinity;
+    cssWidth.value = Math.min(w, (h * COLS) / ROWS);
+  }
+  draw();
+}
+
+watch(() => [props.frame, props.mode, props.scale, props.maxHeight, cssWidth.value], draw);
+
+onBeforeUnmount(() => window.removeEventListener('resize', onResize));
 </script>
 
 <template>

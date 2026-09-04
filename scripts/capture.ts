@@ -20,6 +20,8 @@ const scenarios: [string, string][] = [
   ['06-仰卧-原始网格', '#type=static&action=1&frame=8&mode=grid&scale=fixed250'],
   ['07-仰卧-自动量程', '#type=static&action=1&frame=8&mode=smooth&scale=auto'],
   ['08-动态过程', '#type=dynamic&frame=80&mode=smooth&scale=fixed250'],
+  ['11-指标卡与曲线-仰卧', '#type=static&action=1&frame=10&mode=smooth&scale=auto'],
+  ['12-指标卡与曲线-动态播放中', '#type=dynamic&frame=15&mode=smooth&scale=auto&autoplay=1'],
 ];
 
 const browser = await puppeteer.launch({ headless: 'shell' });

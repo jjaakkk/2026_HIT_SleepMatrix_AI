@@ -87,3 +87,15 @@ export function computeMetrics(
 export function contactIndex(metrics: FrameMetrics): number {
   return metrics.contactRatio * 100;
 }
+
+/**
+ * 逐帧指标历史（用于指标卡 sparkline 与时间曲线）。
+ * 帧序 = 回放顺序；对同一数据源一次性计算并缓存。
+ */
+export function metricsHistory(
+  frames: ReadonlyArray<ArrayLike<number>>,
+  bg: ArrayLike<number> | null,
+  threshold = 20,
+): FrameMetrics[] {
+  return frames.map((f) => computeMetrics(f, bg, threshold));
+}

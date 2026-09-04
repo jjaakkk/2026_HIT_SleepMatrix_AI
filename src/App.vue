@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import HeatmapCanvas from './components/HeatmapCanvas.vue';
+import MetricCards from './components/MetricCards.vue';
+import MetricsChart from './components/MetricsChart.vue';
 import { turboColor } from './render/heatmap.ts';
 import type { HeatmapMode, ScaleMode } from './render/heatmap.ts';
 import { SLEEP_POS_NAMES } from './core/types.ts';
-import { computeMetrics } from './core/metrics.ts';
+import { computeMetrics, metricsHistory } from './core/metrics.ts';
 import { PlaybackController } from './core/playback.ts';
 
 interface DemoAction {
@@ -23,7 +25,7 @@ interface DemoPerson {
 }
 interface DemoData {
   people: DemoPerson[];
-  dynamic: { person: string; frames: number[][]; labels: number[] };
+  dynamic: { person: string; bg: number[]; frames: number[][]; labels: number[] };
 }
 
 const data = ref<DemoData | null>(null);
@@ -80,8 +82,24 @@ const currentFrame = computed(
 
 const metrics = computed(() => {
   if (!currentFrame.value.length || !person.value) return null;
-  return computeMetrics(currentFrame.value, person.value.bg, 20);
+  return computeMetrics(currentFrame.value, bgForMetrics.value, 20);
 });
+
+// 视口高度 → 热力图最大高度（保证底部曲线图在 900px 高视口内也可见）
+const viewportH = ref(window.innerHeight);
+const heatmapMaxHeight = computed(() => Math.max(260, viewportH.value - 480));
+
+// 当前数据源的全部帧 + 对应空载背景（动态帧用 wzh 自己的背景）
+const framesList = computed<ArrayLike<number>[]>(() =>
+  sourceType.value === 'dynamic'
+    ? (data.value?.dynamic.frames ?? [])
+    : (currentAction.value?.frames ?? []),
+);
+const bgForMetrics = computed<ArrayLike<number> | null>(() =>
+  sourceType.value === 'dynamic' ? (data.value?.dynamic.bg ?? null) : (person.value?.bg ?? null),
+);
+// 逐帧指标历史（回放顺序），用于指标卡 sparkline 与时间曲线
+const history = computed(() => metricsHistory(framesList.value, bgForMetrics.value, 20));
 
 // rAF 驱动
 let rafId = 0;
@@ -148,11 +166,13 @@ function applyHash() {
   rebuildController();
   const f = Number(h.get('frame'));
   if (!Number.isNaN(f)) controller.value?.seek(f);
+  if (h.get('autoplay') === '1') controller.value?.play();
 }
 
 const legendCanvas = ref<HTMLCanvasElement | null>(null);
 
 onMounted(async () => {
+  window.addEventListener('resize', () => (viewportH.value = window.innerHeight));
   const res = await fetch(`${import.meta.env.BASE_URL}data/demo.json`);
   data.value = (await res.json()) as DemoData;
   person.value = data.value.people[0] ?? null;
@@ -179,7 +199,7 @@ const phases = [
   { id: 1, name: '读取数据', done: true },
   { id: 2, name: '静态热力图', done: true },
   { id: 3, name: '帧动画', done: true },
-  { id: 4, name: '实时指标与曲线', done: false },
+  { id: 4, name: '实时指标与曲线', done: true },
   { id: 5, name: '区域分析', done: false },
   { id: 6, name: '完整大屏 UI', done: false },
   { id: 7, name: '气囊模块', done: false },
@@ -193,7 +213,7 @@ const phases = [
       <h1>智能床垫实时监测系统</h1>
       <div class="badges">
         <span class="badge replay">● 回放 · 本地历史数据</span>
-        <span class="badge">v0.3.0 · Phase 3</span>
+        <span class="badge">v0.4.0 · Phase 4</span>
       </div>
     </header>
 
@@ -253,7 +273,13 @@ const phases = [
             <span>{{ sourceLabel }}</span>
             <span class="frame-tag">第 {{ frameIdx }} 帧</span>
           </div>
-          <HeatmapCanvas :frame="currentFrame" :mode="mode" :scale="scale" @hover="hoverCell = $event" />
+          <HeatmapCanvas
+            :frame="currentFrame"
+            :mode="mode"
+            :scale="scale"
+            :max-height="heatmapMaxHeight"
+            @hover="hoverCell = $event"
+          />
           <div class="controls">
             <button class="ctl" title="上一帧" @click="stepPrev">⏮</button>
             <button class="ctl play" :title="playing ? '暂停' : '播放'" @click="togglePlay">
@@ -284,16 +310,12 @@ const phases = [
       </section>
 
       <aside class="panel right">
-        <h2>当前帧</h2>
+        <h2>实时压力指标</h2>
+        <MetricCards :metrics="metrics" :history="history" />
+        <h2 style="margin-top: 18px">当前帧</h2>
         <dl class="info">
           <div><dt>睡姿</dt><dd>{{ sleepPosName }}</dd></div>
           <div><dt>传感器点</dt><dd>44 × 24 = 1056</dd></div>
-          <div><dt>最大压力</dt><dd>{{ metrics?.maxRaw ?? '-' }}</dd></div>
-          <div><dt>净最大（扣空载）</dt><dd>{{ metrics ? metrics.maxNet.toFixed(0) : '-' }}</dd></div>
-          <div>
-            <dt>有效接触点</dt>
-            <dd>{{ metrics ? `${metrics.activePoints}（${(metrics.contactRatio * 100).toFixed(1)}%）` : '-' }}</dd>
-          </div>
           <div>
             <dt>悬浮读数</dt>
             <dd>{{ hoverCell ? `(${hoverCell.row}, ${hoverCell.col}) = ${hoverCell.value}` : '悬停查看' }}</dd>
@@ -310,6 +332,11 @@ const phases = [
         </p>
       </aside>
     </main>
+
+    <section class="chart-panel">
+      <h2>压力指标趋势（随回放实时更新）</h2>
+      <MetricsChart :history="history" :frame-idx="frameIdx" />
+    </section>
 
     <footer class="footer">
       <span v-for="p in phases" :key="p.id" class="phase" :class="{ done: p.done }">P{{ p.id }} {{ p.name }}</span>
@@ -535,6 +562,25 @@ select {
   padding: 10px 20px;
   border-top: 1px solid var(--border);
   font-size: 11px;
+}
+.chart-panel {
+  margin: 0 20px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.chart-panel h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.chart-panel :deep(.chart-wrap) {
+  flex: 1;
 }
 .phase {
   color: var(--text-secondary);

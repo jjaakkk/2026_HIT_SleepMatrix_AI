@@ -15,6 +15,7 @@ import { parseRegion, parseSpine } from './core/parsers/annotations.ts';
 import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stats.ts';
 import { PlaybackController } from './core/playback.ts';
 import { SimulatedAirbagSource } from './core/airbag.ts';
+import { generateSimulatedDataset } from './core/simulate.ts';
 
 interface DemoAction {
   action: number;
@@ -36,6 +37,55 @@ interface DemoData {
 }
 
 const data = ref<DemoData | null>(null);
+/** 数据源：demo = 真实数据子集（public/data/demo.json）；simulated = 内置模拟数据 */
+const dataSource = ref<'demo' | 'simulated'>('demo');
+const simulatedCache = ref<DemoData | null>(null);
+
+function simulatedData(): DemoData {
+  if (!simulatedCache.value) {
+    simulatedCache.value = generateSimulatedDataset() as unknown as DemoData;
+  }
+  return simulatedCache.value;
+}
+
+async function loadData(): Promise<void> {
+  const h = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
+  if (h.get('data') === 'sim') dataSource.value = 'simulated';
+  if (dataSource.value === 'simulated') {
+    data.value = simulatedData();
+    return;
+  }
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}data/demo.json`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data.value = (await res.json()) as DemoData;
+  } catch (e) {
+    console.warn('[数据] demo.json 加载失败，自动切换内置模拟数据：', e);
+    dataSource.value = 'simulated';
+    data.value = simulatedData();
+  }
+}
+
+function selectDataSource(t: 'demo' | 'simulated'): void {
+  if (dataSource.value === t) return;
+  dataSource.value = t;
+  if (t === 'simulated') {
+    data.value = simulatedData();
+    personIdx.value = 0;
+    actionIdx.value = 0;
+    selectedRegion.value = null;
+    rebuildController();
+  } else {
+    data.value = null;
+    loadData().then(() => {
+      personIdx.value = 0;
+      actionIdx.value = 0;
+      selectedRegion.value = null;
+      rebuildController();
+    });
+  }
+}
+
 const personIdx = ref(0);
 const person = computed(() => data.value?.people[personIdx.value] ?? null);
 const sourceType = ref<'static' | 'dynamic'>('static');
@@ -282,12 +332,21 @@ function applyHash() {
   if (h.get('autoplay') === '1') controller.value?.play();
 }
 
+const legendTicks = computed<number[] | null>(() => {
+  if (scale.value === 'fixed250') return [0, 50, 100, 150, 200, 250];
+  if (scale.value === 'fixed500') return [0, 100, 200, 300, 400, 500];
+  return null; // 自动量程
+});
+const legendCaption = computed(() => {
+  if (scale.value === 'auto') return `自动 · 帧最大 ${metrics.value?.maxRaw ?? '-'}`;
+  return '固定量程';
+});
+
 const legendCanvas = ref<HTMLCanvasElement | null>(null);
 
 onMounted(async () => {
   window.addEventListener('resize', () => (viewportH.value = window.innerHeight));
-  const res = await fetch(`${import.meta.env.BASE_URL}data/demo.json`);
-  data.value = (await res.json()) as DemoData;
+  await loadData();
   applyHash();
   // 图例渐变色（turbo，0-250）
   const c = legendCanvas.value;
@@ -326,6 +385,9 @@ const phases = [
       <h1>智能床垫实时监测系统</h1>
       <div class="badges">
         <span class="badge replay">● 回放 · 本地历史数据</span>
+        <span class="badge" :class="dataSource === 'simulated' ? 'sim' : ''">
+          ● 数据 · {{ dataSource === 'demo' ? '真实子集' : '内置模拟' }}
+        </span>
         <span class="badge sim">● 气囊 · 模拟数据</span>
         <span class="badge">v0.8.0 · Phase 8</span>
       </div>
@@ -334,6 +396,13 @@ const phases = [
     <main class="content">
       <aside class="panel left">
         <h2>数据源</h2>
+        <div class="field">
+          <span>数据集</span>
+          <div class="seg">
+            <button :class="{ active: dataSource === 'demo' }" @click="selectDataSource('demo')">真实子集</button>
+            <button :class="{ active: dataSource === 'simulated' }" @click="selectDataSource('simulated')">内置模拟</button>
+          </div>
+        </div>
         <div class="field">
           <span>类型</span>
           <div class="seg">
@@ -388,9 +457,10 @@ const phases = [
         </div>
         <div class="legend">
           <canvas ref="legendCanvas" class="legend-canvas"></canvas>
-          <div class="legend-ticks">
-            <span>0</span><span>50</span><span>100</span><span>150</span><span>200</span><span>250</span>
+          <div v-if="legendTicks" class="legend-ticks">
+            <span v-for="t in legendTicks" :key="t">{{ t }}</span>
           </div>
+          <div v-else class="legend-caption">{{ legendCaption }}</div>
         </div>
       </aside>
 
@@ -671,6 +741,12 @@ select {
   font-size: 11px;
   color: var(--text-secondary);
   margin-top: 4px;
+}
+.legend-caption {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  text-align: center;
 }
 .center {
   display: flex;

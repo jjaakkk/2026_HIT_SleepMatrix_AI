@@ -31,6 +31,8 @@ const scenarios: [string, string][] = [
   ['19-用户切换-wzh右侧卧', '#type=static&person=wzh&action=16&frame=8&mode=smooth&scale=auto'],
   ['21-气囊面板-均衡', '#type=static&person=SAI&action=1&frame=8&mode=smooth&scale=auto'],
   ['23-动态-睡姿事件条', '#type=dynamic&frame=55&mode=smooth&scale=auto&dynlabels=1'],
+  ['24-内置模拟-仰卧', '#data=sim&type=static&action=1&frame=8&mode=smooth&scale=auto'],
+  ['25-内置模拟-左侧卧', '#data=sim&type=static&action=10&frame=8&mode=smooth&scale=auto'],
 ];
 
 const browser = await puppeteer.launch({ headless: 'shell' });

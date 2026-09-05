@@ -117,21 +117,23 @@ const confidencePct = computed(() =>
   display: flex;
   align-items: center;
   gap: 13px;
-  padding: 13px 14px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
+  padding: 14px 16px;
+  border-radius: var(--r-sm);
+  /* 嵌套规则：面板内不再嵌套带边框卡片 —— 用明度块表达层级 */
+  border: none;
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--pose-color) 7%, var(--surface-1)),
-    var(--surface-1) 55%
+    color-mix(in srgb, var(--pose-color) 7%, var(--surface-2)),
+    var(--surface-2) 55%
   );
-  transition:
-    border-color var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
+  transition: background-color var(--dur-base) var(--ease-out);
 }
 .pose-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--pose-color) 10%, var(--surface-hover)),
+    var(--surface-hover) 55%
+  );
 }
 .tile {
   flex: none;
@@ -160,7 +162,7 @@ const confidencePct = computed(() =>
 }
 .pose-name {
   font-size: var(--fs-xl);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text-1);
   line-height: 1.2;

@@ -41,14 +41,12 @@ withDefaults(
   min-width: 0;
   min-height: 0;
   background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
 }
 .panel.borderless {
   background: transparent;
   border-color: transparent;
-  box-shadow: none;
 }
 .head {
   display: flex;
@@ -56,6 +54,7 @@ withDefaults(
   justify-content: space-between;
   gap: 8px;
   padding: 13px 16px 0;
+  flex: none;
 }
 .head-main {
   display: flex;

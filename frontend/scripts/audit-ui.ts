@@ -95,14 +95,15 @@ try {
 
       const heatmap = rect('.heatmap-panel');
       const canvas = rect('.heatmap-panel canvas');
-      const topbar = rect('.topbar');
       const rail = rect('.col-left');
       const right = rect('.col-right');
       const bottom = rect('.bottom');
       const chart = rect('.chart-panel canvas');
+      const stageEl = q('.stage') as HTMLElement | null;
 
       out.sizes = {
-        topbarH: topbar ? Math.round(topbar.height) : 0,
+        stageW: stageEl ? stageEl.offsetWidth : 0,
+        stageH: stageEl ? stageEl.offsetHeight : 0,
         heatmapPanel: heatmap ? `${Math.round(heatmap.width)}×${Math.round(heatmap.height)}` : 'missing',
         heatmapCanvas: canvas ? `${Math.round(canvas.width)}×${Math.round(canvas.height)}` : 'missing',
         railW: rail ? Math.round(rail.width) : 0,
@@ -139,7 +140,8 @@ try {
     })) as {
       hOverflow: string[];
       sizes: {
-        topbarH: number;
+        stageW: number;
+        stageH: number;
         heatmapPanel: string;
         heatmapCanvas: string;
         railW: number;
@@ -158,7 +160,11 @@ try {
 
     console.log(`\n=== 布局审计 @ ${tag} ===`);
     check('无水平溢出', (audit.hOverflow as string[]).length === 0, JSON.stringify(audit.hOverflow));
-    check('顶栏高度≈58', Math.abs((audit.sizes as { topbarH: number }).topbarH - 58) <= 2, String(audit.sizes.topbarH));
+    check(
+      '设计空间固定 1920×1080（scale-to-fit 基座）',
+      audit.sizes.stageW === 1920 && audit.sizes.stageH === 1080,
+      `${audit.sizes.stageW}×${audit.sizes.stageH}`,
+    );
     check('热力图画布存在且非零', /(\d+)×(\d+)/.test(audit.sizes.heatmapCanvas as string) && !/0×0/.test(audit.sizes.heatmapCanvas as string), String(audit.sizes.heatmapCanvas));
     check('底部行在视口内', audit.bottomInView as boolean);
     check('趋势图 canvas 存在', (audit.sizes.chartCanvas as string) !== 'missing');
@@ -204,6 +210,35 @@ try {
       return Math.abs(wrap.getBoundingClientRect().width - canvas.getBoundingClientRect().width);
     });
     check('热力图容器收缩包裹画布（无黑块）', wrapGap >= 0 && wrapGap <= 2, `偏差 ${wrapGap}px`);
+
+    // 后代越界检测：每个面板的后代都不得溢出面板边界（重叠/溢出的机械判定）
+    const outOfBounds = await page.evaluate(() => {
+      const panels = [
+        '.heatmap-panel',
+        '.chart-panel',
+        '.insight',
+        '.airbag-panel',
+        '.ranking-panel',
+      ];
+      const bad: string[] = [];
+      for (const sel of panels) {
+        const panel = document.querySelector(sel) as HTMLElement | null;
+        if (!panel) continue;
+        const pr = panel.getBoundingClientRect();
+        const floatSel = '.tooltip, .pop, .tt-title';
+        panel.querySelectorAll('*').forEach((el) => {
+          const r = (el as HTMLElement).getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) return;
+          const cs = getComputedStyle(el);
+          if (cs.position === 'absolute' || cs.position === 'fixed') return; // 浮层/绝对定位豁免
+          if (r.left < pr.left - 2 || r.right > pr.right + 2 || r.top < pr.top - 2 || r.bottom > pr.bottom + 2) {
+            bad.push(`${sel} :: ${el.tagName}.${(el.className + '').split(' ')[0]} (${Math.round(r.right - pr.right)}px 越界)`);
+          }
+        });
+      }
+      return bad.slice(0, 8);
+    });
+    check('面板后代零越界（无重叠/溢出）', outOfBounds.length === 0, JSON.stringify(outOfBounds));
   }
 
   // ---- 交互审计 ----
@@ -212,46 +247,27 @@ try {
   await page.waitForSelector('canvas');
   await sleep(800);
 
-  // 主题切换
-  const bgBefore = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
-  await page.click('.theme-btn');
-  await sleep(400);
-  const bgAfter = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
-  const darkMode = await page.evaluate(() => document.documentElement.dataset.theme === 'dark');
-  check('主题切换（浅→深）', darkMode && bgBefore !== bgAfter, `${bgBefore} → ${bgAfter}`);
-  // 暗色主题对比度
-  const darkColors = await page.evaluate(() => {
-    const cs = getComputedStyle(document.documentElement);
-    return {
-      bg: cs.getPropertyValue('--surface-1').trim(),
-      text1: cs.getPropertyValue('--text-1').trim(),
-      text3: cs.getPropertyValue('--text-3').trim(),
-    };
+  // 缩放适配：设计空间 1920×1080，整体等比缩放（无滚动条的关键保证）
+  const scaleInfo = await page.evaluate(() => {
+    const stage = document.querySelector('.stage') as HTMLElement | null;
+    if (!stage) return null;
+    const t = stage.style.transform;
+    const m = t.match(/scale\(([\d.]+)\)/);
+    return m ? Number(m[1]) : null;
   });
-  check(
-    '暗色主文本对比度 ≥ 4.5',
-    contrast(darkColors.text1, darkColors.bg) >= 4.5,
-    `${contrast(darkColors.text1, darkColors.bg).toFixed(1)}:1`,
-  );
-  check(
-    '暗色三级文本对比度 ≥ 4.5',
-    contrast(darkColors.text3, darkColors.bg) >= 4.5,
-    `${contrast(darkColors.text3, darkColors.bg).toFixed(1)}:1`,
-  );
-  await page.click('.theme-btn');
-  await sleep(400);
+  check('scale-to-fit 缩放适配生效（<1）', scaleInfo !== null && scaleInfo > 0 && scaleInfo < 1, String(scaleInfo));
 
-  // 渲染模式分段控件
+  // 渲染模式分段控件（位于热力图面板工具栏）
   await page.evaluate(() => {
-    const btns = [...document.querySelectorAll('.seg button')] as HTMLElement[];
-    btns.find((b) => b.textContent?.includes('原始网格'))?.click();
+    const btns = [...document.querySelectorAll('.heatmap-panel .toolbar .seg button')] as HTMLElement[];
+    btns.find((b) => b.textContent?.includes('网格'))?.click();
   });
   await sleep(400);
-  const modeChip = await page.evaluate(() => document.querySelector('.scale-chip')?.textContent?.trim());
+  const modeChip = await page.evaluate(() => document.querySelector('.mode-chip')?.textContent?.trim());
   check('渲染模式切换联动芯片', modeChip === '原始网格', String(modeChip));
   await page.evaluate(() => {
-    const btns = [...document.querySelectorAll('.seg button')] as HTMLElement[];
-    btns.find((b) => b.textContent?.includes('标准') && !b.textContent?.includes('标准渲染'))?.click();
+    const btns = [...document.querySelectorAll('.heatmap-panel .toolbar .seg button')] as HTMLElement[];
+    btns.find((b) => b.textContent?.includes('标准'))?.click();
   });
   await sleep(300);
 
@@ -274,17 +290,17 @@ try {
   const personAfter = await page.evaluate(() => document.querySelector('.col-left .trigger .val')?.textContent?.trim());
   check('下拉选择生效', !!personBefore && !!personAfter && personBefore !== personAfter, `${personBefore} → ${personAfter}`);
 
-  // 图层开关
+  // 图层开关（芯片按钮）
   await page.evaluate(() => {
-    const sw = document.querySelectorAll('.layers .switch')[0] as HTMLElement | null;
-    sw?.click();
+    const chips = document.querySelectorAll('.layer-grid .layer-chip') as NodeListOf<HTMLElement>;
+    chips[0]?.click();
   });
   await sleep(300);
   const regionsHidden = await page.evaluate(() => document.querySelectorAll('.heatmap-panel .region').length === 0);
   check('图层开关（部位区域）生效', regionsHidden);
   await page.evaluate(() => {
-    const sw = document.querySelectorAll('.layers .switch')[0] as HTMLElement | null;
-    sw?.click();
+    const chips = document.querySelectorAll('.layer-grid .layer-chip') as NodeListOf<HTMLElement>;
+    chips[0]?.click();
   });
   await sleep(300);
 
@@ -383,14 +399,16 @@ try {
   const kbPerson = await page.evaluate(() => document.querySelector('.col-left .trigger .val')?.textContent?.trim());
   check('下拉键盘导航（↓↓+Enter 切换）', kbPerson === 'wzh · 167 cm / 66 kg', String(kbPerson));
 
-  // ---- 架构对齐检查（后端离线态） ----
-  const algoBadges = await page.evaluate(() =>
-    [...document.querySelectorAll('.topbar .badge')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim()),
+  // ---- 架构对齐检查（后端离线态，状态位于侧栏底部） ----
+  const algoStatus = await page.evaluate(() =>
+    [...document.querySelectorAll('.status-list .status-row')].map((b) =>
+      b.textContent?.replace(/\s+/g, ' ').trim(),
+    ),
   );
   check(
-    '算法服务徽章存在且为未连接态',
-    algoBadges.some((t) => t?.includes('算法服务') && t.includes('未连接')),
-    JSON.stringify(algoBadges),
+    '算法服务状态存在且为未连接态',
+    algoStatus.some((t) => t?.includes('算法服务') && t.includes('未连接')),
+    JSON.stringify(algoStatus),
   );
   const svmDisabled = await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.seg button')] as HTMLButtonElement[];
@@ -399,7 +417,7 @@ try {
   });
   check('后端离线时 SVM 推理选项禁用', svmDisabled === true, String(svmDisabled));
   const weakRenamed = await page.evaluate(() =>
-    [...document.querySelectorAll('.seg button')].some((b) => b.textContent?.includes('弱力可视化')),
+    [...document.querySelectorAll('.seg button')].some((b) => b.textContent?.includes('弱力')),
   );
   check('弱力可视化命名（与后端算法区分）', weakRenamed);
 

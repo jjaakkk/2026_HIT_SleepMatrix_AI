@@ -23,14 +23,16 @@
 Vite + Vue 3 + TypeScript + Canvas（热力图 / 趋势图自绘）+ 自建设计系统（design tokens + UI 原语 + 动效），
 无重型 UI/图表框架依赖。
 
-## 设计系统（v3）
+## 设计系统（v4）
 
-浅色优先（冷调瓷白 + 深松绿主色），支持暗色主题与系统偏好，全部语义令牌驱动（详见 `docs/设计系统-v3.md`）：
+浅色唯一（冷调瓷白 `#f5f5f7` + 深松绿主色 `#0d7a6b`），全部语义令牌驱动（详见 `docs/设计系统-v3.md`）：
 
-- 字体：Inter Variable（UI/数字）+ IBM Plex Mono（仪表读数）+ Noto Sans SC（中文回退）
-- 原语：`ui/Icon`（统一 24×24 图标集）、`UiSegmented`（滑动指示块）、`UiSelect`（fixed 定位下拉）、`UiSwitch`、`PanelCard`、`UiBadge`
-- 动效：入场编排（stagger）、指标数值滚动（easeOutCubic）、弹簧过渡、播放脉冲反馈；全面尊重 `prefers-reduced-motion`
-- 无障碍：全文键盘可达、焦点环、WCAG AA 对比度（主文本 17:1 / 三级文本 4.9:1）
+- 字体：Inter Variable（西文/数字）+ **MiSans 小米字体**（中文，与 Inter 几何气质匹配，cn-font-split 按需加载，字重 400/500/600）+ IBM Plex Mono（仪表读数）
+- 布局：**scale-to-fit 缩放适配** —— 固定 1920×1080 设计空间，任意分辨率整体等比缩放，零滚动条、零重叠、零断点碎片化
+- 卡片规则（提炼自 awesome-design-md 8 篇文档）：表面明度阶梯 + 1px hairline 边框，**零卡片投影**（阴影仅浮层）；圆角统一 12px 卡片/8px 控件/9999 胶囊；面板内不嵌套带框卡片；悬停只提亮不位移
+- 原语：`ui/Icon`、`UiSegmented`（offsetLeft 测量 + ResizeObserver 跟随字体加载）、`UiSelect`（fixed 定位下拉）、`UiSwitch`、`PanelCard`、`UiBadge`
+- 动效：入场编排、指标数值滚动、播放脉冲反馈；全面尊重 `prefers-reduced-motion`
+- 无障碍：全文键盘可达、焦点环、WCAG AA 对比度（主文本 17.9:1 / 三级文本 4.5:1）
 
 ## 数据事实基线（已实测核验，详见 docs/）
 

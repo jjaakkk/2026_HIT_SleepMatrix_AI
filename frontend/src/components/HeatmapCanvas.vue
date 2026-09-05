@@ -274,7 +274,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize));
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.05),
     inset 0 1px 8px rgba(0, 0, 0, 0.35),
-    var(--shadow-sm);
+    var(--shadow-float);
 }
 canvas {
   display: block;

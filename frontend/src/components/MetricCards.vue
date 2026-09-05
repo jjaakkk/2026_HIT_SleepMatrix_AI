@@ -203,15 +203,12 @@ watch(historyKey, () => {
   animation-delay: calc(var(--i) * 50ms + 120ms);
   transition:
     border-color var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out),
-    transform var(--dur-base) var(--ease-out),
     background-color var(--dur-base) var(--ease-out);
 }
+/* 悬停只提亮表面（共识规则：不位移、不加投影） */
 .card:hover {
   border-color: var(--border-strong);
-  background: var(--surface-1);
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
+  background: var(--surface-hover);
 }
 @keyframes card-in {
   from {
@@ -254,7 +251,7 @@ watch(historyKey, () => {
 }
 .value {
   font-size: var(--fs-num);
-  font-weight: 640;
+  font-weight: 600;
   line-height: 1.15;
   color: var(--text-1);
   letter-spacing: -0.02em;

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import TopBar from './components/TopBar.vue';
 import SidebarControls from './components/SidebarControls.vue';
 import HeatmapPanel from './components/HeatmapPanel.vue';
 import InsightPanel from './components/InsightPanel.vue';
@@ -9,6 +8,7 @@ import AirbagPanel from './components/AirbagPanel.vue';
 import PoseTimeline from './components/PoseTimeline.vue';
 import RegionRanking from './components/RegionRanking.vue';
 import PanelCard from './components/ui/PanelCard.vue';
+import { useScaleToFit } from './composables/useScaleToFit.ts';
 import type { DemoData } from './core/demo';
 import type { HeatmapMode, ScaleMode } from './render/heatmap.ts';
 import { SLEEP_POS_NAMES } from './core/types.ts';
@@ -19,6 +19,9 @@ import { PlaybackController } from './core/playback.ts';
 import { SimulatedAirbagSource } from './core/airbag.ts';
 import { generateSimulatedDataset } from './core/simulate.ts';
 import { usePostureInference } from './composables/usePostureInference.ts';
+
+// 缩放适配：固定 1920×1080 设计空间，任意分辨率整体等比缩放（零滚动零溢出）
+const { scale } = useScaleToFit();
 
 const data = ref<DemoData | null>(null);
 /** 数据模式：demo = 真实记录子集；simulated = 内置演示数据 */
@@ -73,7 +76,7 @@ const person = computed(() => data.value?.people[personIdx.value] ?? null);
 const sourceType = ref<'static' | 'dynamic'>('static');
 const actionIdx = ref(0);
 const mode = ref<HeatmapMode>('smooth');
-const scale = ref<ScaleMode>('auto');
+const scaleMode = ref<ScaleMode>('auto');
 const hoverRegion = ref<number | null>(null);
 
 const currentAction = computed(() => person.value?.actions[actionIdx.value] ?? null);
@@ -150,9 +153,8 @@ const metrics = computed(() => {
   return computeMetrics(currentFrame.value, bgForMetrics.value, 20);
 });
 
-// 视口高度 → 热力图最大高度（顶栏 58 + 上边距 16 + 底部行 308 + 面板镶边 ~150）
-const viewportH = ref(window.innerHeight);
-const heatmapMaxHeight = computed(() => Math.max(240, viewportH.value - 516));
+// 设计空间内热力图最大高度（1920×1080 常量：内容行 758 - 面板镶边 ~150）
+const heatmapMaxHeight = 608;
 
 const framesList = computed<ArrayLike<number>[]>(() =>
   sourceType.value === 'dynamic'
@@ -185,26 +187,6 @@ const selectedRegion = ref<number | null>(null);
 // 气囊模拟源（真实设备就绪后换成实现同一接口的适配器）
 const airbagSource = new SimulatedAirbagSource();
 
-// 睡姿推理（架构：通过 HTTP API 获取算法结果；离线时回退记录标签）
-const inference = usePostureInference();
-const displayPose = computed(() => {
-  if (inference.poseSource.value === 'inference' && inference.prediction.value) {
-    return inference.prediction.value.label_zh;
-  }
-  return sleepPosName.value;
-});
-const poseNote = computed(() => {
-  if (inference.poseSource.value === 'inference') {
-    if (inference.backend.value === 'online') return 'SVM 逐帧推理 · POST /api/posture/predict';
-    return '后端离线 · 已回退记录标签';
-  }
-  return sourceType.value === 'dynamic'
-    ? '翻身过程 · 未使用文件内标签'
-    : currentAction.value?.action === 0
-      ? '空载记录 · 判定为离床'
-      : undefined;
-});
-
 function onAirbagPreset(name: string) {
   if (name === '腰部支撑增强') {
     showRegions.value = true;
@@ -233,6 +215,26 @@ const selectedRegionColor = computed(() => {
   if (selectedRegion.value === null || !regions.value) return '#8b8f98';
   const rg = regions.value[selectedRegion.value];
   return rg?.valid ? (REGION_COLORS[rg.name] ?? '#8b8f98') : '#8b8f98';
+});
+
+// 睡姿推理（架构：通过 HTTP API 获取算法结果；离线时回退记录标签）
+const inference = usePostureInference();
+const displayPose = computed(() => {
+  if (inference.poseSource.value === 'inference' && inference.prediction.value) {
+    return inference.prediction.value.label_zh;
+  }
+  return sleepPosName.value;
+});
+const poseNote = computed(() => {
+  if (inference.poseSource.value === 'inference') {
+    if (inference.backend.value === 'online') return 'SVM 逐帧推理 · POST /api/posture/predict';
+    return '后端离线 · 已回退记录标签';
+  }
+  return sourceType.value === 'dynamic'
+    ? '翻身过程 · 未使用文件内标签'
+    : currentAction.value?.action === 0
+      ? '空载记录 · 判定为离床'
+      : undefined;
 });
 
 // rAF 驱动
@@ -300,7 +302,8 @@ function applyHash() {
     }
   }
   if (h.get('mode') === 'grid' || h.get('mode') === 'weak') mode.value = h.get('mode') as HeatmapMode;
-  if (h.get('scale') === 'auto' || h.get('scale') === 'fixed500') scale.value = h.get('scale') as ScaleMode;
+  if (h.get('scale') === 'auto' || h.get('scale') === 'fixed500')
+    scaleMode.value = h.get('scale') as ScaleMode;
   if (h.get('calf') === '1') showCalf.value = true;
   if (h.get('dynlabels') === '1') showDynLabels.value = true;
   const rgRaw = h.get('region');
@@ -319,8 +322,8 @@ function applyHash() {
 }
 
 const legendTicks = computed<number[] | null>(() => {
-  if (scale.value === 'fixed250') return [0, 50, 100, 150, 200, 250];
-  if (scale.value === 'fixed500') return [0, 100, 200, 300, 400, 500];
+  if (scaleMode.value === 'fixed250') return [0, 50, 100, 150, 200, 250];
+  if (scaleMode.value === 'fixed500') return [0, 100, 200, 300, 400, 500];
   return null;
 });
 const legendCaption = computed(() => {
@@ -328,13 +331,14 @@ const legendCaption = computed(() => {
   return m ? `峰值 ${Math.round(m.maxRaw)}` : '峰值 —';
 });
 const scaleWarning = computed(() =>
-  scale.value !== 'auto' && metrics.value && metrics.value.maxRaw > (scale.value === 'fixed250' ? 250 : 500)
+  scaleMode.value !== 'auto' &&
+  metrics.value &&
+  metrics.value.maxRaw > (scaleMode.value === 'fixed250' ? 250 : 500)
     ? '峰值超出量程 · 顶部已截断'
     : null,
 );
 
 onMounted(async () => {
-  window.addEventListener('resize', () => (viewportH.value = window.innerHeight));
   void inference.probe();
   await loadData();
   if (person.value) {
@@ -357,165 +361,179 @@ watch(
 </script>
 
 <template>
-  <div class="shell">
-    <TopBar
-      :playing="playing"
-      :simulated="dataSource === 'simulated'"
-      :backend-state="inference.backend.value"
-      :model-available="inference.modelAvailable.value"
-      :contract-mismatch="inference.contractMismatch.value"
-    />
+  <div class="viewport">
+    <div class="stage" :style="{ transform: `scale(${scale})` }">
+      <Transition name="page" mode="out-in">
+        <div v-if="data" key="app" class="shell">
+          <main class="content">
+            <aside class="col-left">
+              <SidebarControls
+                :data-source="dataSource"
+                :source-type="sourceType"
+                :people="data.people"
+                :person-idx="personIdx"
+                :person="person"
+                :action-idx="actionIdx"
+                :show-regions="showRegions"
+                :show-spine="showSpine"
+                :show-calf="showCalf"
+                :show-dyn-labels="showDynLabels"
+                :pose-source="inference.poseSource.value"
+                :backend-online="inference.backend.value === 'online'"
+                :backend-state="inference.backend.value"
+                :model-available="inference.modelAvailable.value"
+                :contract-mismatch="inference.contractMismatch.value"
+                :simulated="dataSource === 'simulated'"
+                @update:data-source="selectDataSource"
+                @update:source-type="selectSource"
+                @update:person-idx="selectPerson"
+                @update:action-idx="selectAction"
+                @update:show-regions="showRegions = $event"
+                @update:show-spine="showSpine = $event"
+                @update:show-calf="showCalf = $event"
+                @update:show-dyn-labels="showDynLabels = $event"
+                @update:pose-source="inference.setPoseSource($event)"
+              />
+            </aside>
 
-    <Transition name="page" mode="out-in">
-      <div v-if="data" key="app" class="stage">
-        <main class="content">
-          <aside class="col-left">
-            <SidebarControls
-              :data-source="dataSource"
-              :source-type="sourceType"
-              :people="data.people"
-              :person-idx="personIdx"
-              :person="person"
-              :action-idx="actionIdx"
-              :mode="mode"
-              :scale="scale"
-              :show-regions="showRegions"
-              :show-spine="showSpine"
-              :show-calf="showCalf"
-              :show-dyn-labels="showDynLabels"
-              :pose-source="inference.poseSource.value"
-              :backend-online="inference.backend.value === 'online'"
-              @update:data-source="selectDataSource"
-              @update:source-type="selectSource"
-              @update:person-idx="selectPerson"
-              @update:action-idx="selectAction"
-              @update:mode="mode = $event"
-              @update:scale="scale = $event"
-              @update:show-regions="showRegions = $event"
-              @update:show-spine="showSpine = $event"
-              @update:show-calf="showCalf = $event"
-              @update:show-dyn-labels="showDynLabels = $event"
-              @update:pose-source="inference.setPoseSource($event)"
-            />
-          </aside>
+            <section class="col-center">
+              <HeatmapPanel
+                :frame="displayFrame"
+                :mode="mode"
+                :scale="scaleMode"
+                :max-height="heatmapMaxHeight"
+                :regions="regions"
+                :spine="spine"
+                :show-regions="showRegions"
+                :show-spine="showSpine"
+                :show-calf="showCalf"
+                :selected-region="selectedRegion"
+                :source-label="sourceLabel"
+                :frame-idx="frameIdx"
+                :frame-count="frameCount"
+                :playing="playing"
+                :speed="speed"
+                :legend-ticks="legendTicks"
+                :legend-caption="legendCaption"
+                :scale-warning="scaleWarning"
+                @update:mode="mode = $event"
+                @update:scale="scaleMode = $event"
+                @region-hover="hoverRegion = $event"
+                @region-select="selectedRegion = $event"
+                @toggle-play="togglePlay"
+                @step-prev="stepPrev"
+                @step-next="stepNext"
+                @seek="onSeek"
+                @speed="setSpeed"
+              />
+              <PanelCard class="chart-panel" flush title="压力趋势" icon="activity">
+                <div class="chart-inner">
+                  <PoseTimeline
+                    v-if="sourceType === 'dynamic' && showDynLabels && data"
+                    :labels="data.dynamic.labels"
+                    :frame-idx="frameIdx"
+                    @seek="(i) => controller?.seek(i)"
+                  />
+                  <MetricsChart
+                    :history="history"
+                    :frame-idx="frameIdx"
+                    :extra-series="
+                      selectedRegion !== null && regionCurve.length
+                        ? [
+                            {
+                              label: `${selectedRegionName}平均压力`,
+                              color: selectedRegionColor,
+                              values: regionCurve,
+                            },
+                          ]
+                        : []
+                    "
+                  />
+                </div>
+              </PanelCard>
+            </section>
 
-          <section class="col-center">
-            <HeatmapPanel
-              :frame="displayFrame"
-              :mode="mode"
-              :scale="scale"
-              :max-height="heatmapMaxHeight"
-              :regions="regions"
-              :spine="spine"
-              :show-regions="showRegions"
-              :show-spine="showSpine"
-              :show-calf="showCalf"
-              :selected-region="selectedRegion"
-              :source-label="sourceLabel"
-              :frame-idx="frameIdx"
-              :frame-count="frameCount"
-              :playing="playing"
-              :speed="speed"
-              :legend-ticks="legendTicks"
-              :legend-caption="legendCaption"
-              :scale-warning="scaleWarning"
-              @region-hover="hoverRegion = $event"
-              @region-select="selectedRegion = $event"
-              @toggle-play="togglePlay"
-              @step-prev="stepPrev"
-              @step-next="stepNext"
-              @seek="onSeek"
-              @speed="setSpeed"
-            />
-            <PanelCard class="chart-panel" flush title="压力趋势" icon="activity">
-              <div class="chart-inner">
-                <PoseTimeline
-                  v-if="sourceType === 'dynamic' && showDynLabels && data"
-                  :labels="data.dynamic.labels"
-                  :frame-idx="frameIdx"
-                  @seek="(i) => controller?.seek(i)"
-                />
-                <MetricsChart
-                  :history="history"
-                  :frame-idx="frameIdx"
-                  :extra-series="
-                    selectedRegion !== null && regionCurve.length
-                      ? [{ label: `${selectedRegionName}平均压力`, color: selectedRegionColor, values: regionCurve }]
-                      : []
-                  "
+            <aside class="col-right">
+              <InsightPanel
+                :pose="displayPose"
+                :duration-frames="poseDurationFrames"
+                :pose-note="poseNote"
+                :playing="playing"
+                :pose-source="inference.poseSource.value"
+                :confidence="inference.prediction.value?.confidence ?? null"
+                :predicting="inference.predicting.value"
+                :metrics="metrics"
+                :history="history"
+              />
+            </aside>
+          </main>
+
+          <section class="bottom">
+            <AirbagPanel :source="airbagSource" @preset="onAirbagPreset" />
+            <PanelCard class="ranking-panel" flush title="部位受力" subtitle="按平均净压排序" icon="bar-chart">
+              <div class="ranking-inner">
+                <RegionRanking
+                  :stats="regionStats"
+                  :selected="selectedRegion"
+                  :hovered="hoverRegion"
+                  @select="selectedRegion = $event"
                 />
               </div>
             </PanelCard>
           </section>
+        </div>
 
-          <aside class="col-right">
-            <InsightPanel
-              :pose="displayPose"
-              :duration-frames="poseDurationFrames"
-              :pose-note="poseNote"
-              :playing="playing"
-              :pose-source="inference.poseSource.value"
-              :confidence="inference.prediction.value?.confidence ?? null"
-              :predicting="inference.predicting.value"
-              :metrics="metrics"
-              :history="history"
+        <div v-else key="loading" class="shell loading" role="status" aria-label="正在加载数据">
+          <svg class="loading-mark" viewBox="0 0 44 44" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="sm-loading" x1="4" y1="3" x2="40" y2="41" gradientUnits="userSpaceOnUse">
+                <stop stop-color="var(--brand-from)" />
+                <stop offset="1" stop-color="var(--brand-to)" />
+              </linearGradient>
+            </defs>
+            <rect width="44" height="44" rx="12" fill="url(#sm-loading)" />
+            <path
+              d="M12 21.5c1.6-2.2 3-2.2 4.6 0s3 2.2 4.6 0 3-2.2 4.6 0 3 2.2 4.6 0"
+              stroke="#fff"
+              stroke-width="2.2"
+              stroke-linecap="round"
             />
-          </aside>
-        </main>
-
-        <section class="bottom">
-          <AirbagPanel :source="airbagSource" @preset="onAirbagPreset" />
-          <PanelCard class="ranking-panel" flush title="部位受力" subtitle="按平均净压排序" icon="bar-chart">
-            <div class="ranking-inner">
-              <RegionRanking
-                :stats="regionStats"
-                :selected="selectedRegion"
-                :hovered="hoverRegion"
-                @select="selectedRegion = $event"
-              />
-            </div>
-          </PanelCard>
-        </section>
-      </div>
-
-      <div v-else key="loading" class="loading" role="status" aria-label="正在加载数据">
-        <svg class="loading-mark" viewBox="0 0 44 44" fill="none" aria-hidden="true">
-          <defs>
-            <linearGradient id="sm-loading" x1="4" y1="3" x2="40" y2="41" gradientUnits="userSpaceOnUse">
-              <stop stop-color="var(--brand-from)" />
-              <stop offset="1" stop-color="var(--brand-to)" />
-            </linearGradient>
-          </defs>
-          <rect width="44" height="44" rx="12" fill="url(#sm-loading)" />
-          <path
-            d="M12 21.5c1.6-2.2 3-2.2 4.6 0s3 2.2 4.6 0 3-2.2 4.6 0 3 2.2 4.6 0"
-            stroke="#fff"
-            stroke-width="2.2"
-            stroke-linecap="round"
-          />
-        </svg>
-        <p class="loading-text">正在加载监测数据…</p>
-      </div>
-    </Transition>
+          </svg>
+          <p class="loading-text">正在加载监测数据…</p>
+        </div>
+      </Transition>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* 视口：整屏画布；stage 为固定 1920×1080 设计空间，等比缩放居中 */
+.viewport {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.stage {
+  width: 1920px;
+  height: 1080px;
+  flex: none;
+  transform-origin: center center;
+  will-change: transform;
+}
+
 .shell {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
+  padding: 16px 20px 0;
   background:
     radial-gradient(1200px 500px at 50% -180px, var(--accent-soft) 0%, transparent 60%),
     var(--bg);
-}
-
-.stage {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
 }
 
 /* ---------- 主体三栏 ---------- */
@@ -525,12 +543,10 @@ watch(
   display: grid;
   grid-template-columns: 236px minmax(0, 1fr) 300px;
   gap: 16px;
-  padding: 16px 20px 0;
 }
 .col-left {
   min-height: 0;
-  overflow-y: auto;
-  animation: enter-y 520ms var(--ease-out) 60ms both;
+  animation: enter-y 420ms var(--ease-out) 40ms both;
 }
 /* 中部双面板：热力图 + 压力趋势 */
 .col-center {
@@ -538,14 +554,11 @@ watch(
   display: grid;
   grid-template-columns: minmax(380px, 0.9fr) minmax(320px, 1.1fr);
   gap: 16px;
-  animation: enter-y 560ms var(--ease-out) 120ms both;
-}
-.col-center :deep(.heatmap-panel) {
-  min-width: 0;
+  animation: enter-y 420ms var(--ease-out) 80ms both;
 }
 .col-right {
   min-height: 0;
-  animation: enter-y 520ms var(--ease-out) 180ms both;
+  animation: enter-y 420ms var(--ease-out) 120ms both;
 }
 
 @keyframes enter-y {
@@ -564,11 +577,11 @@ watch(
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: 16px;
-  padding: 12px 20px 14px;
+  padding: 12px 0 14px;
   height: 280px;
   min-height: 0;
   flex: none;
-  animation: enter-y 520ms var(--ease-out) 240ms both;
+  animation: enter-y 420ms var(--ease-out) 160ms both;
 }
 .chart-panel {
   min-width: 0;
@@ -597,9 +610,6 @@ watch(
 
 /* ---------- 加载态 ---------- */
 .loading {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 18px;
@@ -608,7 +618,7 @@ watch(
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-float);
   animation: breathe 2.2s var(--ease-in-out) infinite;
 }
 @keyframes breathe {
@@ -642,68 +652,6 @@ watch(
 .page-leave-to {
   opacity: 0;
   transform: translateY(-6px) scale(0.998);
-}
-
-/* ---------- 响应式 ---------- */
-@media (max-width: 1440px) {
-  .content {
-    grid-template-columns: 216px minmax(0, 1fr) 276px;
-  }
-  .bottom {
-    grid-template-columns: minmax(0, 1fr) 330px;
-  }
-}
-@media (max-width: 1220px) {
-  .shell {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-  }
-  .stage {
-    min-height: 0;
-  }
-  .content {
-    grid-template-columns: 1fr;
-    grid-auto-rows: auto;
-    padding: 16px 16px 0;
-  }
-  .col-left {
-    overflow: visible;
-    animation-delay: 60ms;
-  }
-  .col-left :deep(.rail) {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 14px 20px;
-  }
-  .col-left :deep(.rail .group) {
-    flex: 1 1 220px;
-    min-width: 200px;
-  }
-  .col-center {
-    animation-delay: 120ms;
-    grid-template-columns: 1fr;
-    grid-auto-rows: minmax(400px, auto) minmax(240px, auto);
-    min-height: 420px;
-  }
-  .col-center :deep(.heatmap-panel) {
-    width: 100%;
-    max-width: 620px;
-  }
-  .col-right {
-    animation-delay: 180ms;
-    min-height: 420px;
-  }
-  .bottom {
-    grid-template-columns: 1fr;
-    height: auto;
-    grid-auto-rows: 244px auto;
-    padding: 14px 16px 20px;
-    animation-delay: 240ms;
-  }
-  .ranking-inner :deep(.ranking) {
-    max-height: 280px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

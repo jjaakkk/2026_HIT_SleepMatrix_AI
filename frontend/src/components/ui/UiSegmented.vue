@@ -29,25 +29,42 @@ function setRef(i: number) {
 }
 
 function measure() {
-  const wrap = wrapRef.value;
-  if (!wrap) return;
   const idx = props.options.findIndex((o) => o.value === props.modelValue && !o.disabled);
   const el = btnRefs.value[idx];
   if (!el) return;
-  const wr = wrap.getBoundingClientRect();
-  const er = el.getBoundingClientRect();
-  // 相对 padding box 测量（排除 wrap 边框，thumb 以 left:0 为基准）
-  const originX = wr.left + wrap.clientLeft;
-  thumb.value = { x: er.left - originX, w: er.width, visible: true };
+  // offsetLeft/offsetWidth 为布局坐标，不受 scale-to-fit 的 transform 影响；
+  // offsetLeft 相对 offsetParent（seg）的 padding 边，与 thumb 的 left:0 基准一致
+  thumb.value = { x: el.offsetLeft, w: el.offsetWidth, visible: true };
 }
 
 watch(() => props.modelValue, () => nextTick(measure));
-watch(() => props.options, () => nextTick(measure), { deep: true });
+watch(() => props.options, () => {
+  nextTick(() => {
+    attachObservers();
+    measure();
+  });
+}, { deep: true });
+
+let resizeObserver: ResizeObserver | null = null;
+/** 观察每个按钮：字体按需加载（MiSans 子集化）时按钮重排 → 重测滑动块 */
+function attachObservers() {
+  resizeObserver?.disconnect();
+  resizeObserver = new ResizeObserver(() => measure());
+  for (const el of btnRefs.value) {
+    if (el) resizeObserver.observe(el);
+  }
+}
 onMounted(() => {
   measure();
+  attachObservers();
   window.addEventListener('resize', measure);
+  if (document.fonts?.ready) void document.fonts.ready.then(() => measure());
 });
-onBeforeUnmount(() => window.removeEventListener('resize', measure));
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', measure);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
 
 function pick(v: string | number) {
   if (v !== props.modelValue) emit('update:modelValue', v);
@@ -111,9 +128,7 @@ function pick(v: string | number) {
   left: 0;
   background: var(--surface-1);
   border-radius: calc(var(--r-md) - 4px);
-  box-shadow:
-    var(--shadow-xs),
-    inset 0 0 0 1px var(--border-subtle);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
   transition:
     transform var(--dur-slow) var(--ease-spring),
     width var(--dur-slow) var(--ease-spring),
@@ -151,7 +166,7 @@ function pick(v: string | number) {
 }
 .opt.active {
   color: var(--text-1);
-  font-weight: 560;
+  font-weight: 500;
 }
 .opt:disabled {
   opacity: 0.45;

@@ -59,7 +59,7 @@ const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>();
   height: 14px;
   border-radius: 50%;
   background: var(--surface-1);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-float);
   transform: translateY(-50%);
   transition: transform var(--dur-base) var(--ease-spring);
 }

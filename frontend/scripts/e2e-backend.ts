@@ -88,13 +88,10 @@ try {
   await sleep(1500); // 等待健康探测完成
 
   const badges = await page.evaluate(() =>
-    [...document.querySelectorAll('.topbar .badge')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim()),
+    [...document.querySelectorAll('.status-list .status-row')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim()),
   );
-  check('顶栏显示「算法服务 · 已连接」', badges.some((t) => t?.includes('算法服务 · 已连接')), JSON.stringify(badges));
-  check(
-    '契约版本不一致徽章未出现',
-    !badges.some((t) => t?.includes('契约版本不一致')),
-  );
+  check('侧栏状态显示「算法服务在线」', badges.some((t) => t?.includes('算法服务在线')), JSON.stringify(badges));
+  check('契约版本不一致警告未出现', !badges.some((t) => t?.includes('契约版本不一致')));
 
   const svmState = await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.seg button')] as HTMLButtonElement[];
@@ -123,7 +120,7 @@ try {
     }
     await sleep(500);
     const after = await page.evaluate(() => ({
-      badges: [...document.querySelectorAll('.topbar .badge')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim()),
+      badges: [...document.querySelectorAll('.status-list .status-row')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim()),
       activePoseSource: [...document.querySelectorAll('.seg button')].find(
         (b) => b.getAttribute('aria-pressed') === 'true' && b.textContent?.includes('SVM 推理'),
       )?.textContent?.trim(),

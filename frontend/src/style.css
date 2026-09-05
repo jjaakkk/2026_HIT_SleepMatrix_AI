@@ -1,33 +1,39 @@
 /* ============================================================================
-   SleepMatrix · 设计系统
+   SleepMatrix · 设计系统 v4
    ────────────────────────────────────────────────────────────────────────────
-   视觉方向：安静的高级健康科技产品（参考 Eight Sleep / Oura / Linear / Vercel）
-   美学原则：精确 · 克制 · 连贯 · 层级
-   亮度主题为默认；[data-theme="dark"] 切换夜间主题。
+   视觉方向：安静的高级健康科技产品。
+   规则共识（awesome-design-md 8 篇文档提炼：Apple/Linear/Stripe/Vercel/
+   Raycast/Notion/Revolut/Resend）：
+   · 卡片层级 = 表面明度阶梯 + 1px hairline 边框，零投影（阴影只留给浮层）
+   · 圆角统一：卡片 12px / 控件 8px / 浮层 16px / 胶囊 9999px，无中间值
+   · 字重只用 400 / 500 / 600；数字 tabular-nums；标签正字距
+   · 主色占比 <5%（仅 CTA / 选中态 / 焦点环）
    ========================================================================== */
 
 :root {
   color-scheme: light;
 
-  /* ── 语义色板（浅色） ─────────────────────────────────────────────── */
-  --bg: #f5f5f2;
-  --bg: #f4f6f3;
-  --bg-tint: #edf1ec;
-  --surface-1: #ffffff;
-  --surface-2: #f9faf8;
-  --surface-3: #eef1ed; /* inset / 控件底 */
-  --surface-hover: #f2f5f1;
+  /* ── 表面明度阶梯（canvas → card → inset） ────────────────────────── */
+  --bg: #f5f5f7; /* canvas（Apple parchment） */
+  --bg-tint: #efeff2;
+  --surface-1: #ffffff; /* card */
+  --surface-2: #fafafa; /* card 内层 */
+  --surface-3: #f0f0f2; /* inset / 控件底 */
+  --surface-hover: #f5f5f6;
 
-  --border: rgba(24, 24, 27, 0.07);
-  --border-strong: rgba(24, 24, 27, 0.14);
-  --border-subtle: rgba(24, 24, 27, 0.045);
+  /* ── hairline 边框（三档） ─────────────────────────────────────────── */
+  --border: #e5e5e8; /* hairline */
+  --border-strong: #d4d4d9;
+  --border-subtle: #ececef;
 
-  --text-1: #1a1a1e;
-  --text-2: #5a5c63;
-  --text-3: #6e7078;
-  --text-inverse: #f7f7f8;
+  /* ── 文本四级 ──────────────────────────────────────────────────────── */
+  --text-1: #171717; /* ink */
+  --text-2: #4d4d4d; /* body */
+  --text-3: #757575; /* mute（≥4.5:1 on #fff） */
+  --text-4: #b4b4b8; /* disabled */
+  --text-inverse: #ffffff;
 
-  /* 主色：深松绿（松林夜色 → 清晨暖光的睡眠叙事） */
+  /* ── 主色：深松绿（松林夜色 → 清晨暖光的睡眠叙事） ───────────────── */
   --accent: #0d7a6b;
   --accent-hover: #0a6a5e;
   --accent-active: #08584e;
@@ -35,11 +41,11 @@
   --accent-soft-strong: rgba(13, 122, 107, 0.16);
   --accent-contrast: #ffffff;
   --accent-ring: rgba(13, 122, 107, 0.26);
-  /* 品牌渐变：夜色松绿 → 清晨琥珀（仅用于品牌符号与关键焦点元素） */
+  /* 品牌渐变：夜色松绿 → 清晨琥珀（仅品牌符号） */
   --brand-from: #14a38d;
   --brand-to: #ef9f4f;
 
-  /* 语义色（与热力图区域色同一体系） */
+  /* ── 语义色（仅状态点/图表语义，不做装饰） ───────────────────────── */
   --c-blue: #3b82f6;
   --c-amber: #e6a23c;
   --c-teal: #14b8a6;
@@ -59,20 +65,18 @@
 
   /* ── 字体 ────────────────────────────────────────────────────────── */
   --font-ui:
-    'Inter Variable', 'Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    'MiSans', 'Inter Variable', 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
-  /* 字号阶梯（UI 用 13/14 基准；指标大数字单独 scale） */
+  /* 字号阶梯（仪表盘密度） */
   --fs-2xs: 11px;
   --fs-xs: 12px;
   --fs-sm: 13px;
   --fs-base: 14px;
   --fs-lg: 16px;
   --fs-xl: 18px;
-  --fs-2xl: 22px;
-  --fs-num: 26px;
-  --fs-num-lg: 34px;
-  --fs-num-xl: 42px;
+  --fs-num: 24px;
+  --fs-num-lg: 32px;
 
   /* ── 间距（4px 节奏） ────────────────────────────────────────────── */
   --s0: 4px;
@@ -83,41 +87,31 @@
   --s5: 24px;
   --s6: 32px;
   --s7: 40px;
-  --s8: 48px;
 
-  /* ── 圆角（按语义，不做全圆角） ──────────────────────────────────── */
-  --r-xs: 5px;
-  --r-sm: 7px;
-  --r-md: 10px;
-  --r-lg: 14px;
-  --r-xl: 18px;
+  /* ── 圆角（语义统一，无中间值） ──────────────────────────────────── */
+  --r-xs: 6px; /* chip/badge 小件 */
+  --r-sm: 8px; /* 按钮/输入 */
+  --r-md: 12px; /* 卡片 */
+  --r-lg: 16px; /* 浮层/大容器 */
   --r-pill: 999px;
 
-  /* ── 阴影（克制分层） ────────────────────────────────────────────── */
-  --shadow-xs: 0 1px 2px rgba(22, 22, 26, 0.05);
-  --shadow-sm: 0 1px 2px rgba(22, 22, 26, 0.04), 0 2px 8px rgba(22, 22, 26, 0.05);
-  --shadow-md:
-    0 1px 2px rgba(22, 22, 26, 0.05), 0 6px 20px rgba(22, 22, 26, 0.08);
-  --shadow-lg:
-    0 2px 6px rgba(22, 22, 26, 0.06), 0 16px 44px rgba(22, 22, 26, 0.14);
-  --shadow-pop:
-    0 1px 2px rgba(22, 22, 26, 0.05), 0 10px 32px rgba(22, 22, 26, 0.16);
+  /* ── 阴影：仅浮层（弹窗/下拉/悬浮卡），卡片一律零投影 ─────────────── */
+  --shadow-pop: 0 16px 48px -8px rgba(15, 15, 15, 0.16);
+  --shadow-float: 0 4px 12px -8px rgba(15, 15, 15, 0.08);
 
   /* ── 动效令牌 ────────────────────────────────────────────────────── */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* 出画：平滑减速 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1); /* 轻微回弹：物理反馈 */
-  --ease-emphasize: cubic-bezier(0.2, 0.9, 0.25, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 
-  --dur-fast: 120ms; /* 微交互：hover/焦点/图标 */
-  --dur-base: 200ms; /* 组件状态 */
-  --dur-slow: 320ms; /* 组件过渡：抽屉/下拉/滑块 */
-  --dur-page: 520ms; /* 页面编排 */
-  --dur-num: 420ms; /* 数值滚动 */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
+  --dur-page: 420ms;
+  --dur-num: 380ms;
 
-  --dist-x: 8px; /* 入场位移 */
   --dist-y: 10px;
-  --stagger: 45ms;
+  --stagger: 40ms;
 
   /* z 层 */
   --z-base: 0;
@@ -125,61 +119,6 @@
   --z-overlay: 300;
   --z-pop: 500;
   --z-toast: 700;
-}
-
-/* 夜间主题：暖中性深色（区别于旧版冷蓝工业色） */
-[data-theme='dark'] {
-  color-scheme: dark;
-
-  --bg: #141416;
-  --bg-tint: #19191c;
-  --surface-1: #1d1d21;
-  --surface-2: #212125;
-  --surface-3: #26262b;
-  --surface-hover: #2a2a30;
-
-  --border: rgba(240, 240, 244, 0.08);
-  --border-strong: rgba(240, 240, 244, 0.16);
-  --border-subtle: rgba(240, 240, 244, 0.05);
-
-  --text-1: #f0f0f2;
-  --text-2: #a8a9b0;
-  --text-3: #82848e;
-  --text-inverse: #1a1a1e;
-
-  --accent: #35c2a4;
-  --accent-hover: #4acbb0;
-  --accent-active: #2ab396;
-  --accent-soft: rgba(53, 194, 164, 0.14);
-  --accent-soft-strong: rgba(53, 194, 164, 0.24);
-  --accent-contrast: #0c2b24;
-  --accent-ring: rgba(53, 194, 164, 0.38);
-
-  --brand-from: #35c2a4;
-  --brand-to: #ef9f4f;
-
-  --c-blue: #60a5fa;
-  --c-amber: #eab258;
-  --c-teal: #2dd4bf;
-  --c-coral: #f97f75;
-  --c-slate: #9aa0aa;
-  --c-success: #3fbf85;
-  --c-warning: #e0a33e;
-  --c-danger: #ef6f64;
-  --c-blue-soft: rgba(96, 165, 250, 0.13);
-  --c-amber-soft: rgba(234, 178, 88, 0.13);
-  --c-teal-soft: rgba(45, 212, 191, 0.12);
-  --c-coral-soft: rgba(249, 127, 117, 0.12);
-  --c-slate-soft: rgba(154, 160, 170, 0.14);
-  --c-success-soft: rgba(63, 191, 133, 0.13);
-  --c-warning-soft: rgba(224, 163, 62, 0.13);
-  --c-danger-soft: rgba(239, 111, 100, 0.12);
-
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.42);
-  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.32), 0 16px 44px rgba(0, 0, 0, 0.55);
-  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.32), 0 10px 32px rgba(0, 0, 0, 0.6);
 }
 
 /* ── 基础 ──────────────────────────────────────────────────────────────── */
@@ -199,11 +138,11 @@ body {
   color: var(--text-1);
   font-family: var(--font-ui);
   font-size: var(--fs-base);
-  line-height: 1.55;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  font-feature-settings: 'cv11', 'ss01';
+  font-feature-settings: 'cv11', 'ss01', 'tnum';
   overflow: hidden;
 }
 
@@ -253,7 +192,7 @@ body {
   background: transparent;
 }
 
-/* 尊重减少动效偏好：保留状态反馈所需的即时性，去掉运动 */
+/* 尊重减少动效偏好 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -263,14 +202,4 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* 主题切换瞬间整体过渡 */
-body,
-.shell,
-.surface {
-  transition:
-    background-color var(--dur-slow) var(--ease-in-out),
-    border-color var(--dur-slow) var(--ease-in-out),
-    color var(--dur-slow) var(--ease-in-out);
 }

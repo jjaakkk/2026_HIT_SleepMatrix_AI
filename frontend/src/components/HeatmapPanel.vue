@@ -43,6 +43,8 @@ const emit = defineEmits<{
   'step-next': [];
   seek: [index: number];
   speed: [v: number];
+  'update:mode': [v: HeatmapMode];
+  'update:scale': [v: ScaleMode];
 }>();
 
 const legendCanvas = ref<HTMLCanvasElement | null>(null);
@@ -79,7 +81,7 @@ const fillPct = computed(() =>
 
 const MODE_LABELS: Record<HeatmapMode, string> = {
   smooth: '标准渲染',
-  weak: '弱力增强',
+  weak: '弱力可视化',
   grid: '原始网格',
 };
 const modeLabel = computed(() => MODE_LABELS[props.mode]);
@@ -89,6 +91,17 @@ const speedOptions = [
   { value: 1, label: '1×' },
   { value: 2, label: '2×' },
   { value: 4, label: '4×' },
+];
+
+const modeOptions: { value: HeatmapMode; label: string; title?: string }[] = [
+  { value: 'smooth', label: '标准', title: '标准压扩曲线' },
+  { value: 'weak', label: '弱力', title: '渲染压扩 γ=0.35，突出弱压力区域（可视化口径）' },
+  { value: 'grid', label: '网格', title: '逐格原始读数' },
+];
+const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
+  { value: 'fixed250', label: '0–250', title: '固定量程 0–250' },
+  { value: 'auto', label: '自动', title: '按当前帧峰值自适应' },
+  { value: 'fixed500', label: '0–500', title: '固定量程 0–500' },
 ];
 </script>
 
@@ -100,10 +113,31 @@ const speedOptions = [
         <span class="src-label">{{ sourceLabel }}</span>
       </div>
       <div class="head-right">
-        <span class="scale-chip">{{ modeLabel }}</span>
+        <span class="mode-chip">{{ modeLabel }}</span>
         <span class="frame-num num">{{ String(frameIdx).padStart(2, '0') }} / {{ frameCount - 1 }}</span>
       </div>
     </header>
+
+    <div class="toolbar">
+      <div class="tool-group" role="group" aria-label="渲染模式">
+        <UiSegmented
+          :model-value="mode"
+          :options="modeOptions"
+          size="sm"
+          :equal="false"
+          @update:model-value="emit('update:mode', $event as HeatmapMode)"
+        />
+      </div>
+      <div class="tool-group" role="group" aria-label="压力量程">
+        <UiSegmented
+          :model-value="scale"
+          :options="scaleOptions"
+          size="sm"
+          :equal="false"
+          @update:model-value="emit('update:scale', $event as ScaleMode)"
+        />
+      </div>
+    </div>
 
     <div class="canvas-zone">
       <HeatmapCanvas
@@ -193,9 +227,8 @@ const speedOptions = [
   height: 100%;
   min-height: 0;
   background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
   padding: 14px 16px 14px;
 }
 
@@ -205,7 +238,7 @@ const speedOptions = [
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 12px;
+  padding-bottom: 10px;
   flex: none;
 }
 .src {
@@ -233,7 +266,7 @@ const speedOptions = [
   gap: 10px;
   flex: none;
 }
-.scale-chip {
+.mode-chip {
   font-size: var(--fs-2xs);
   color: var(--text-2);
   border: 1px solid var(--border);
@@ -248,6 +281,18 @@ const speedOptions = [
   color: var(--text-2);
   letter-spacing: 0.02em;
   white-space: nowrap;
+}
+
+/* 工具栏：渲染 + 量程（自侧栏移入，贴近操作对象） */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding-bottom: 10px;
+}
+.tool-group :deep(.seg) {
+  width: auto;
 }
 
 /* 画布区 */
@@ -357,7 +402,6 @@ const speedOptions = [
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-contrast);
-  box-shadow: var(--shadow-sm);
 }
 .ctl.play:hover {
   background: var(--accent-hover);
@@ -427,7 +471,7 @@ const speedOptions = [
   border-radius: 50%;
   background: var(--surface-1);
   border: 2.5px solid var(--accent);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-float);
   transition:
     transform var(--dur-fast) var(--ease-spring),
     box-shadow var(--dur-fast) var(--ease-out);

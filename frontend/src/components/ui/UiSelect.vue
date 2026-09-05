@@ -319,7 +319,7 @@ onBeforeUnmount(() => {
 .opt.sel {
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 560;
+  font-weight: 500;
 }
 .opt:disabled {
   opacity: 0.45;

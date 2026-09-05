@@ -1,0 +1,50 @@
+{
+  "contract_version": "1.1",
+  "pressure_matrix": {
+    "rows": 44,
+    "columns": 24,
+    "index_order": "row_column"
+  },
+  "postures": [
+    {
+      "id": 0,
+      "key": "supine",
+      "name_zh": "仰卧",
+      "actions": [1, 2, 3, 4, 5, 6],
+      "mirrored_label_id": 0
+    },
+    {
+      "id": 1,
+      "key": "prone",
+      "name_zh": "俯卧",
+      "actions": [7, 8, 9],
+      "mirrored_label_id": 1
+    },
+    {
+      "id": 2,
+      "key": "left_lateral",
+      "name_zh": "左侧卧",
+      "actions": [10, 11, 12, 13, 14, 15],
+      "mirrored_label_id": 3
+    },
+    {
+      "id": 3,
+      "key": "right_lateral",
+      "name_zh": "右侧卧",
+      "actions": [16, 17, 18, 19, 20, 21],
+      "mirrored_label_id": 2
+    }
+  ],
+  "excluded_actions": {
+    "0": "unloaded_pressure",
+    "22": "dynamic_sequence"
+  },
+  "mirrored_action_pairs": [
+    [10, 16],
+    [11, 17],
+    [12, 18],
+    [13, 19],
+    [14, 20],
+    [15, 21]
+  ]
+}

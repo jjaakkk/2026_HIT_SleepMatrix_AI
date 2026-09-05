@@ -8,6 +8,7 @@
 !/docs
 !/frontend
 !/tests
+!/train
 !/dataset
 dataset/*
 !dataset/README.md
@@ -15,3 +16,13 @@ dataset/*
 # Python-generated files
 __pycache__/
 *.py[cod]
+
+# frontend 生成物（Vite）
+frontend/node_modules
+frontend/dist
+frontend/*.local
+frontend/.DS_Store
+frontend/*.log
+
+# UI 验证截图（生成物，不入库；输出于仓库根 _screenshots/）
+_screenshots/

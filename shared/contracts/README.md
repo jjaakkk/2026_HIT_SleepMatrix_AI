@@ -1,14 +1,11 @@
-# Shared data contracts
+# 前后端共享数据契约
 
-This directory is the language-neutral contract between the Python backend
-and the frontend. `posture.json` is the source of truth for pressure-matrix
-dimensions, posture labels and action mappings. `pressure-frame.schema.json`
-describes a matrix transported over HTTP.
+本目录存放 Python 后端与前端共同使用、且不依赖具体编程语言的数据契约。
+`posture.json` 是压力矩阵尺寸、睡姿标签和动作映射的唯一权威定义；
+`pressure-frame.schema.json` 用于描述通过 HTTP 传输的压力矩阵结构。
 
-Changing an existing ID, matrix orientation or field meaning is a breaking
-change and requires a contract-version update plus coordination with all team
-members.
+修改已有 ID、矩阵方向或字段含义属于不兼容变更。进行此类修改时，必须同步
+升级契约版本，并与所有团队成员协调前后端及各算法模块的适配工作。
 
-The frontend can obtain the validated posture contract at runtime from
-`GET /api/contracts/posture`; it does not need filesystem access to this
-directory.
+前端运行时可以通过 `GET /api/contracts/posture` 获取经过后端校验的睡姿契约，
+无需直接访问本目录中的文件。

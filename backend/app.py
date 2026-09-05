@@ -14,6 +14,7 @@ from backend import config
 from backend.algorithms.body_partition.api import create_blueprint
 from backend.algorithms.posture_svm.inference import PostureSVMClassifier
 from backend.data_utils.contracts import CONTRACT
+from backend.data_utils.pressure_processing import validate_pressure_frame
 
 
 class LazyPostureClassifier:
@@ -42,18 +43,7 @@ def _extract_pressure_matrix(payload: Any) -> np.ndarray:
     raw_matrix = payload.get("pressure_matrix", payload.get("data"))
     if raw_matrix is None:
         raise ValueError("JSON field `pressure_matrix` is required.")
-    try:
-        matrix = np.asarray(raw_matrix, dtype=np.float32)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("`pressure_matrix` must contain only numeric values.") from exc
-    if matrix.shape != config.PRESSURE_MATRIX_SHAPE:
-        raise ValueError(
-            f"`pressure_matrix` must have shape {config.PRESSURE_MATRIX_SHAPE}; "
-            f"received {matrix.shape}."
-        )
-    if not np.isfinite(matrix).all():
-        raise ValueError("`pressure_matrix` cannot contain NaN or infinite values.")
-    return matrix
+    return validate_pressure_frame(raw_matrix, config.PRESSURE_MATRIX_SHAPE)
 
 
 def create_app(model_path: str | Path | None = None) -> Flask:

@@ -100,6 +100,14 @@ try {
   await page.screenshot({ path: path.join(OUT_DIR, '20-大屏1920-整体.png') });
   console.log('✓ 20-大屏1920-整体 已截图');
 
+  // 深色主题整体效果
+  await page.click('.theme-btn');
+  await sleep(500);
+  await page.screenshot({ path: path.join(OUT_DIR, '26-深色主题-整体.png') });
+  console.log('✓ 26-深色主题-整体 已截图');
+  await page.click('.theme-btn');
+  await sleep(500);
+
   // 4× 倍速 + 动态过程播放中截图
   await page.goto(`${BASE}?c=dynamic4x#type=dynamic&frame=30`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('.speed-seg button');

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch, computed } from 'vue';
-import { renderHeatmap, pickCell, computeFrameMax } from '../render/heatmap.ts';
+import { renderHeatmap, pickCell, computeFrameMax, turboColor } from '../render/heatmap.ts';
 import type { HeatmapMode, ScaleMode } from '../render/heatmap.ts';
 import { COLS, ROWS, type BodyRegion, type SpinePoint } from '../core/types.ts';
 import { REGION_COLORS } from '../core/region-stats.ts';
@@ -37,7 +37,16 @@ const cssHeight = computed(() => (cssWidth.value * ROWS) / COLS);
 
 const frameMax = computed(() => computeFrameMax(props.frame));
 
-// 区域矩形（px 坐标；列 x → px = x*W/COLS，行 y → px = y*H/ROWS，覆盖到 x2/y2 格含）
+/** 悬浮格对应的 turbo 色（工具提示色块） */
+const hoverColor = computed(() => {
+  if (!hover.value) return '#888';
+  const m = frameMax.value || 1;
+  const t = Math.min(Math.max(hover.value.value / m, 0), 1);
+  const [r, g, b] = turboColor(t);
+  return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+});
+
+// 区域矩形（px 坐标；覆盖到 x2/y2 格含）
 const regionRects = computed(() => {
   if (!props.regions || !props.showRegions || cssWidth.value === 0) return [];
   return props.regions
@@ -150,13 +159,29 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize));
       :width="cssWidth"
       :height="cssHeight"
     >
-      <g v-if="spinePx.length && spinePath">
-        <path :d="spinePath" fill="none" stroke="#e6edf3" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.85" />
-        <circle v-for="(p, i) in spinePx" :key="i" :cx="p.x" :cy="p.y" r="3.5" fill="#e6edf3" opacity="0.95" />
+      <g v-if="spinePx.length && spinePath" class="spine">
+        <path
+          :d="spinePath"
+          fill="none"
+          stroke="rgba(238,243,248,0.9)"
+          stroke-width="1.3"
+          stroke-dasharray="5 3.5"
+          stroke-linecap="round"
+        />
+        <circle
+          v-for="(p, i) in spinePx"
+          :key="i"
+          :cx="p.x"
+          :cy="p.y"
+          r="3.4"
+          fill="#eef3f8"
+          stroke="rgba(13,17,23,0.85)"
+          stroke-width="1"
+        />
       </g>
       <g
         v-for="rect in regionRects"
-        :key="rect.index"
+        :key="`${rect.index}-${rect.active}`"
         class="region"
         :class="{ active: rect.active }"
         @mouseenter="onRegionEnter(rect.index)"
@@ -164,33 +189,69 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize));
         @click.stop="onRegionClick(rect.index)"
       >
         <rect
-          :x="rect.x"
-          :y="rect.y"
-          :width="rect.w"
-          :height="rect.h"
+          :x="rect.x + 1.5"
+          :y="rect.y + 1.5"
+          :width="Math.max(rect.w - 3, 2)"
+          :height="Math.max(rect.h - 3, 2)"
+          :rx="6"
           :fill="rect.color"
-          :fill-opacity="rect.active ? 0.3 : 0.08"
+          :fill-opacity="rect.active ? 0.26 : 0.1"
           :stroke="rect.active ? '#ffffff' : rect.color"
-          :stroke-width="rect.active ? 3 : 1.2"
+          :stroke-width="rect.active ? 2.2 : 1.3"
+          :stroke-opacity="rect.active ? 1 : 0.75"
+        />
+        <rect
+          :x="rect.x + 5"
+          :y="rect.y + 5"
+          :width="(rect.name.length * 12 + 16)"
+          :height="17"
+          :rx="5.5"
+          :fill="rect.active ? rect.color : 'rgba(13,17,23,0.78)'"
+          :stroke="rect.active ? '#ffffff' : rect.color"
+          :stroke-width="1.1"
         />
         <text
-          :x="rect.x + 4"
-          :y="rect.y + 13"
-          :fill="rect.active ? '#ffffff' : rect.color"
-          font-size="11"
+          :x="rect.x + 5 + (rect.name.length * 12 + 16) / 2"
+          :y="rect.y + 5 + 11.8"
+          :fill="rect.active ? 'rgba(13,17,23,0.92)' : rect.color"
+          font-size="10.5"
           font-weight="700"
-          stroke="#0d1117"
-          stroke-width="3"
-          paint-order="stroke"
+          text-anchor="middle"
           pointer-events="none"
         >
           {{ rect.name }}
         </text>
       </g>
+      <g v-if="hover && hoverRegion === null" class="crosshair" pointer-events="none">
+        <line
+          :x1="hover.x"
+          :y1="0"
+          :x2="hover.x"
+          :y2="cssHeight"
+          stroke="rgba(255,255,255,0.28)"
+          stroke-width="1"
+        />
+        <line
+          :x1="0"
+          :y1="hover.y"
+          :x2="cssWidth"
+          :y2="hover.y"
+          stroke="rgba(255,255,255,0.28)"
+          stroke-width="1"
+        />
+      </g>
     </svg>
-    <div v-if="hover && hoverRegion === null" class="tooltip" :style="{ left: hover.x + 12 + 'px', top: hover.y - 10 + 'px' }">
-      (行{{ hover.row }}, 列{{ hover.col }}) 净压 = {{ hover.value.toFixed(0) }}
-    </div>
+    <Transition name="tip">
+      <div
+        v-if="hover && hoverRegion === null"
+        class="tooltip"
+        :style="{ left: Math.min(hover.x + 14, cssWidth - 150) + 'px', top: Math.max(hover.y - 42, 8) + 'px' }"
+      >
+        <span class="swatch" :style="{ background: hoverColor }" aria-hidden="true" />
+        <span class="tt-main num">净压 {{ hover.value.toFixed(0) }}</span>
+        <span class="tt-sub num">行 {{ hover.row }} · 列 {{ hover.col }}</span>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -198,9 +259,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize));
 .heatmap-wrap {
   position: relative;
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   overflow: hidden;
-  background: #0a0e14;
+  background: #0c0f15;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 1px 8px rgba(0, 0, 0, 0.35);
 }
 canvas {
   display: block;
@@ -214,17 +278,83 @@ canvas {
 .region {
   cursor: pointer;
 }
+.spine {
+  animation: spine-in 640ms var(--ease-out);
+}
+@keyframes spine-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.region rect {
+  transition:
+    fill-opacity var(--dur-base) var(--ease-out),
+    stroke-opacity var(--dur-base) var(--ease-out);
+}
+.region.active > rect:first-child {
+  animation: region-pop var(--dur-slow) var(--ease-out);
+}
+@keyframes region-pop {
+  0% {
+    fill-opacity: 0.42;
+  }
+  100% {
+    fill-opacity: 0.26;
+  }
+}
+.crosshair {
+  animation: none;
+}
 .tooltip {
   position: absolute;
   pointer-events: none;
-  background: rgba(22, 27, 34, 0.95);
-  border: 1px solid #30363d;
-  color: #e6edf3;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  padding: 4px 8px;
-  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  background: rgba(13, 17, 23, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  color: #eef3f8;
+  font-size: 11px;
   white-space: nowrap;
   z-index: 10;
+  backdrop-filter: blur(4px);
+}
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2.5px;
+  flex: none;
+}
+.tt-main {
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.tt-sub {
+  color: rgba(238, 243, 248, 0.62);
+  font-size: 10px;
+}
+.tip-enter-active,
+.tip-leave-active {
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.tip-enter-from,
+.tip-leave-to {
+  opacity: 0;
+  transform: translateY(3px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .spine {
+    animation: none;
+  }
 }
 </style>

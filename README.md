@@ -7,7 +7,17 @@
 
 ## 技术栈
 
-Vite + Vue 3 + TypeScript + Canvas（热力图自绘）+ ECharts（曲线，后续引入）。
+Vite + Vue 3 + TypeScript + Canvas（热力图 / 趋势图自绘）+ 自建设计系统（design tokens + UI 原语 + 动效），
+无重型 UI/图表框架依赖。
+
+## 设计系统（v3）
+
+浅色优先（暖白 + 鸢尾紫主色），支持暗色主题与系统偏好，全部语义令牌驱动（详见 `docs/设计系统-v3.md`）：
+
+- 字体：Inter Variable（UI/数字）+ IBM Plex Mono（仪表读数）+ Noto Sans SC（中文回退）
+- 原语：`ui/Icon`（统一 24×24 图标集）、`UiSegmented`（滑动指示块）、`UiSelect`（fixed 定位下拉）、`UiSwitch`、`PanelCard`、`UiBadge`
+- 动效：入场编排（stagger）、指标数值滚动（easeOutCubic）、弹簧过渡、播放脉冲反馈；全面尊重 `prefers-reduced-motion`
+- 无障碍：全文键盘可达、焦点环、WCAG AA 对比度（主文本 17:1 / 三级文本 4.9:1）
 
 ## 数据事实基线（已实测核验，详见 docs/）
 
@@ -31,6 +41,7 @@ npm run demo     # Phase 1 数据读取自检（打印关键数字）
 npm run export:demo # 生成浏览器演示集 public/data/demo.json
 npm run build    # 类型检查 + 构建
 npm run capture  # 无头浏览器截图验证（需先启动 dev/preview 服务）
+npm run audit:ui # 无头浏览器 UI 审计（布局溢出/对比度/交互/控制台错误，需先启动 preview）
 ```
 
 测试默认从仓库上一级 `../睡姿 区域划分data/睡姿 区域划分data` 读取数据集，

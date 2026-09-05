@@ -9,71 +9,80 @@ const props = defineProps<{
   /** 回放基准帧率（时长 = 帧数 / fps） */
   fps: number;
   note?: string;
+  /** 回放进行中（呼吸指示点） */
+  live?: boolean;
 }>();
 
 const POSE_COLORS: Record<string, string> = {
-  仰卧: '#4da6ff',
-  俯卧: '#e6b84c',
-  左侧卧: '#2fd6b6',
-  右侧卧: '#ff7a6b',
-  离床: '#7a8794',
-  '离床 · 无人': '#7a8794',
-  在床: '#2fd6b6',
-  动态过程: '#2fd6b6',
+  仰卧: '#3b82f6',
+  俯卧: '#e6a23c',
+  左侧卧: '#14b8a6',
+  右侧卧: '#f4695f',
+  离床: '#8b8f98',
+  '离床 · 无人': '#8b8f98',
+  在床: '#14b8a6',
+  动态过程: '#6c5ce0',
 };
 
-const color = computed(() => POSE_COLORS[props.pose] ?? '#8B949E');
+const color = computed(() => POSE_COLORS[props.pose] ?? '#8b8f98');
 const seconds = computed(() => (props.durationFrames / props.fps).toFixed(1));
-
-function stroke() {
-  return { stroke: color.value, color: color.value };
-}
+const isEmpty = computed(() => props.pose === '离床' || props.pose === '离床 · 无人');
 </script>
 
 <template>
   <div
     class="pose-card"
-    :style="{
-      borderColor: color,
-      boxShadow: `inset 0 0 0 1px ${color}14, 0 0 18px ${color}22`,
-    }"
+    :style="{ '--pose-color': color, borderColor: `color-mix(in srgb, ${color} 26%, transparent)` }"
   >
-    <div class="lamp" :style="{ background: color, boxShadow: `0 0 12px ${color}90` }"></div>
-    <svg class="icon" viewBox="0 0 64 64" :stroke="color" stroke-width="2" fill="none">
-      <!-- 床 -->
-      <rect x="8" y="46" width="48" height="10" rx="3" :stroke-dasharray="pose === '离床 · 无人' || pose === '离床' ? '4 3' : 'none'" />
-      <!-- 仰卧 / 俯卧：对称身体 -->
-      <template v-if="pose === '仰卧' || pose === '俯卧' || pose === '在床'">
-        <circle cx="32" cy="16" r="7" />
-        <rect x="20" y="24" width="24" height="16" rx="8" />
-        <rect x="25" y="40" width="5" height="9" rx="2.5" />
-        <rect x="34" y="40" width="5" height="9" rx="2.5" />
-      </template>
-      <!-- 左侧卧：窄身体偏左 -->
-      <template v-else-if="pose === '左侧卧'">
-        <circle cx="21" cy="17" r="6" />
-        <rect x="15" y="25" width="12" height="19" rx="6" />
-        <rect x="17" y="44" width="8" height="7" rx="4" />
-      </template>
-      <!-- 右侧卧：窄身体偏右 -->
-      <template v-else-if="pose === '右侧卧'">
-        <circle cx="43" cy="17" r="6" />
-        <rect x="37" y="25" width="12" height="19" rx="6" />
-        <rect x="39" y="44" width="8" height="7" rx="4" />
-      </template>
-      <!-- 离床：只有床 -->
-      <template v-else-if="pose === '离床' || pose === '离床 · 无人'"></template>
-      <!-- 动态过程：床 + 状态点 -->
-      <template v-else>
-        <circle cx="16" cy="22" r="3" fill="none" />
-        <circle cx="32" cy="14" r="3" fill="none" />
-        <circle cx="48" cy="22" r="3" fill="none" />
-        <path d="M10 34 Q 32 44 54 34" stroke-dasharray="3 3" />
-      </template>
-    </svg>
+    <div class="tile" :aria-hidden="true">
+      <svg class="icon" viewBox="0 0 64 64" :stroke="color" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <!-- 床 -->
+        <rect
+          x="8"
+          y="46"
+          width="48"
+          height="9"
+          rx="3"
+          :stroke-dasharray="isEmpty ? '4 3.2' : 'none'"
+          opacity="0.85"
+        />
+        <!-- 仰卧 / 俯卧 / 在床 -->
+        <template v-if="pose === '仰卧' || pose === '俯卧' || pose === '在床'">
+          <circle cx="32" cy="16" r="6.6" />
+          <rect x="21" y="24.5" width="22" height="15" rx="7.5" />
+          <rect x="26" y="39.5" width="4.4" height="8" rx="2.2" />
+          <rect x="33.6" y="39.5" width="4.4" height="8" rx="2.2" />
+        </template>
+        <!-- 左侧卧 -->
+        <template v-else-if="pose === '左侧卧'">
+          <circle cx="21.5" cy="17.5" r="5.6" />
+          <rect x="15.5" y="25" width="11" height="18" rx="5.5" />
+          <rect x="17.5" y="43" width="7" height="6.5" rx="3.2" />
+        </template>
+        <!-- 右侧卧 -->
+        <template v-else-if="pose === '右侧卧'">
+          <circle cx="42.5" cy="17.5" r="5.6" />
+          <rect x="37.5" y="25" width="11" height="18" rx="5.5" />
+          <rect x="39.5" y="43" width="7" height="6.5" rx="3.2" />
+        </template>
+        <!-- 动态过程 -->
+        <template v-else-if="pose === '动态过程'">
+          <circle cx="16" cy="22" r="2.6" />
+          <circle cx="32" cy="14" r="2.6" />
+          <circle cx="48" cy="22" r="2.6" />
+          <path d="M10 35.5 Q 32 44.5 54 35.5" stroke-dasharray="3.4 3.4" />
+        </template>
+      </svg>
+    </div>
+
     <div class="body">
-      <div class="pose-name" :style="{ color }">{{ pose }}</div>
-      <div class="duration num">持续 {{ durationFrames }} 帧 · {{ seconds }} 秒</div>
+      <div class="name-row">
+        <span class="pose-name">{{ pose }}</span>
+        <span v-if="live && !isEmpty" class="live-dot" title="监测中" aria-hidden="true" />
+      </div>
+      <div class="duration num">
+        持续 {{ durationFrames }} 帧 · {{ seconds }} 秒
+      </div>
       <div v-if="note" class="note">{{ note }}</div>
     </div>
   </div>
@@ -83,45 +92,88 @@ function stroke() {
 .pose-card {
   display: flex;
   align-items: center;
-  gap: 10px;
-  border: 1px solid;
-  border-radius: var(--r-card);
-  padding: 9px 11px;
-  margin-bottom: 10px;
-  background: var(--panel-inset);
+  gap: 13px;
+  padding: 13px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--pose-color) 7%, var(--surface-1)),
+    var(--surface-1) 55%
+  );
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
-.lamp {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+.pose-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.tile {
   flex: none;
-  align-self: flex-start;
-  margin-top: 6px;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--r-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--pose-color) 13%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--pose-color) 22%, transparent);
 }
 .icon {
-  width: 42px;
-  height: 42px;
-  flex: none;
+  width: 40px;
+  height: 40px;
+  display: block;
 }
 .body {
   min-width: 0;
+  flex: 1;
+}
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .pose-name {
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-size: var(--fs-xl);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+  line-height: 1.2;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-success);
+  flex: none;
+  animation: breathe 2s var(--ease-in-out) infinite;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.75);
+  }
 }
 .duration {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-2);
   margin-top: 2px;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
 }
 .note {
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   color: var(--text-3);
   margin-top: 2px;
-  line-height: 1.4;
+  line-height: 1.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
 }
 </style>

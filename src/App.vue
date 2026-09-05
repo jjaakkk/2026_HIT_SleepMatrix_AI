@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import HeatmapCanvas from './components/HeatmapCanvas.vue';
-import MetricCards from './components/MetricCards.vue';
+import TopBar from './components/TopBar.vue';
+import SidebarControls from './components/SidebarControls.vue';
+import HeatmapPanel from './components/HeatmapPanel.vue';
+import InsightPanel from './components/InsightPanel.vue';
 import MetricsChart from './components/MetricsChart.vue';
-import RegionRanking from './components/RegionRanking.vue';
-import SleepPoseCard from './components/SleepPoseCard.vue';
 import AirbagPanel from './components/AirbagPanel.vue';
 import PoseTimeline from './components/PoseTimeline.vue';
-import { turboColor } from './render/heatmap.ts';
+import PanelCard from './components/ui/PanelCard.vue';
+import type { DemoData } from './core/demo';
 import type { HeatmapMode, ScaleMode } from './render/heatmap.ts';
 import { SLEEP_POS_NAMES } from './core/types.ts';
 import { computeMetrics, metricsHistory, isBedOccupied, poseDuration } from './core/metrics.ts';
@@ -16,25 +17,6 @@ import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stat
 import { PlaybackController } from './core/playback.ts';
 import { SimulatedAirbagSource } from './core/airbag.ts';
 import { generateSimulatedDataset } from './core/simulate.ts';
-
-interface DemoAction {
-  action: number;
-  sleepPos: number;
-  region: string;
-  spine: string;
-  frames: number[][];
-}
-interface DemoPerson {
-  name: string;
-  height: number | null;
-  weight: number | null;
-  bg: number[];
-  actions: DemoAction[];
-}
-interface DemoData {
-  people: DemoPerson[];
-  dynamic: { person: string; bg: number[]; frames: number[][]; labels: number[] };
-}
 
 const data = ref<DemoData | null>(null);
 /** 数据模式：demo = 真实记录子集；simulated = 内置演示数据 */
@@ -90,7 +72,7 @@ const sourceType = ref<'static' | 'dynamic'>('static');
 const actionIdx = ref(0);
 const mode = ref<HeatmapMode>('smooth');
 const scale = ref<ScaleMode>('auto');
-const hoverCell = ref<{ row: number; col: number; value: number } | null>(null);
+const hoverRegion = ref<number | null>(null);
 
 const currentAction = computed(() => person.value?.actions[actionIdx.value] ?? null);
 const frameCount = computed(() =>
@@ -120,10 +102,6 @@ const poseKeys = computed(() =>
 );
 const poseDurationFrames = computed(() => poseDuration(poseKeys.value, frameIdx.value));
 
-function actionLabel(a: DemoAction): string {
-  if (a.action === 0) return '空载记录 · 无人';
-  return `${SLEEP_POS_NAMES[a.sleepPos] ?? ''} · 记录 ${a.action}`;
-}
 const sourceLabel = computed(() =>
   sourceType.value === 'dynamic'
     ? `${data.value?.dynamic.person ?? ''} · 翻身过程`
@@ -172,7 +150,7 @@ const metrics = computed(() => {
 
 // 视口高度 → 热力图最大高度（保证底部曲线图可见）
 const viewportH = ref(window.innerHeight);
-const heatmapMaxHeight = computed(() => Math.max(260, viewportH.value - 450));
+const heatmapMaxHeight = computed(() => Math.max(240, viewportH.value - 480));
 
 const framesList = computed<ArrayLike<number>[]>(() =>
   sourceType.value === 'dynamic'
@@ -201,7 +179,6 @@ const showSpine = ref(true);
 const showCalf = ref(false);
 const showDynLabels = ref(false);
 const selectedRegion = ref<number | null>(null);
-const hoverRegion = ref<number | null>(null);
 
 // 气囊模拟源（真实设备就绪后换成实现同一接口的适配器）
 const airbagSource = new SimulatedAirbagSource();
@@ -231,22 +208,14 @@ const selectedRegionName = computed(() => {
   return rg?.valid ? rg.name : '';
 });
 const selectedRegionColor = computed(() => {
-  if (selectedRegion.value === null || !regions.value) return '#7a8794';
+  if (selectedRegion.value === null || !regions.value) return '#8b8f98';
   const rg = regions.value[selectedRegion.value];
-  return rg?.valid ? (REGION_COLORS[rg.name] ?? '#7a8794') : '#7a8794';
-});
-
-// 时钟（仪器面板元素）
-const now = ref(new Date());
-const clockText = computed(() => {
-  const d = now.value;
-  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':');
+  return rg?.valid ? (REGION_COLORS[rg.name] ?? '#8b8f98') : '#8b8f98';
 });
 
 // rAF 驱动
 let rafId = 0;
 let lastTs = 0;
-let lastSec = 0;
 function loop(ts: number) {
   if (lastTs > 0) {
     const dt = ts - lastTs;
@@ -254,10 +223,6 @@ function loop(ts: number) {
     airbagSource.tick(dt);
   }
   lastTs = ts;
-  if (ts - lastSec >= 1000) {
-    lastSec = ts;
-    now.value = new Date();
-  }
   playing.value = controller.value?.isPlaying ?? false;
   rafId = requestAnimationFrame(loop);
 }
@@ -273,8 +238,7 @@ function stepPrev() {
 function stepNext() {
   controller.value?.step(1);
 }
-function onSeek(e: Event) {
-  const v = Number((e.target as HTMLInputElement).value);
+function onSeek(v: number) {
   controller.value?.seek(v);
 }
 function setSpeed(v: number) {
@@ -295,18 +259,6 @@ function selectSource(t: 'static' | 'dynamic') {
   sourceType.value = t;
   rebuildController();
 }
-
-const modeOptions: { value: HeatmapMode; label: string }[] = [
-  { value: 'smooth', label: '标准' },
-  { value: 'weak', label: '弱力增强' },
-  { value: 'grid', label: '原始网格' },
-];
-const scaleOptions: { value: ScaleMode; label: string }[] = [
-  { value: 'fixed250', label: '0–250' },
-  { value: 'auto', label: '自动' },
-  { value: 'fixed500', label: '0–500' },
-];
-const speedOptions = [0.5, 1, 2, 4];
 
 // URL hash 状态（便于直链演示）
 function applyHash() {
@@ -349,10 +301,14 @@ const legendTicks = computed<number[] | null>(() => {
   return null;
 });
 const legendCaption = computed(() => {
-  if (scale.value === 'auto') return `自动量程 · 峰值 ${metrics.value?.maxRaw ?? '-'}`;
-  return '固定量程';
+  const m = metrics.value;
+  return m ? `峰值 ${Math.round(m.maxRaw)}` : '峰值 —';
 });
-const legendCanvas = ref<HTMLCanvasElement | null>(null);
+const scaleWarning = computed(() =>
+  scale.value !== 'auto' && metrics.value && metrics.value.maxRaw > (scale.value === 'fixed250' ? 250 : 500)
+    ? '峰值超出量程 · 顶部已截断'
+    : null,
+);
 
 onMounted(async () => {
   window.addEventListener('resize', () => (viewportH.value = window.innerHeight));
@@ -362,17 +318,6 @@ onMounted(async () => {
     if (i >= 0) actionIdx.value = i;
   }
   applyHash();
-  const c = legendCanvas.value;
-  if (c) {
-    c.width = 256;
-    c.height = 14;
-    const ctx = c.getContext('2d')!;
-    for (let x = 0; x < 256; x++) {
-      const [r, g, b] = turboColor(x / 255);
-      ctx.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
-      ctx.fillRect(x, 0, 1, 14);
-    }
-  }
 });
 
 watch(() => frameCount.value, (n) => {
@@ -383,204 +328,133 @@ watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
 
 <template>
   <div class="shell">
-    <header class="topbar">
-      <div class="brand">
-        <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="3" width="20" height="18" rx="3" />
-          <path d="M4 12h3l1.5-4 3 8 3-6 1.5 2H20" />
-        </svg>
-        <div class="brand-text">
-          <span class="brand-name">SleepMatrix</span>
-          <span class="brand-sub">睡眠压力监测台</span>
-        </div>
-      </div>
-      <div class="topbar-right">
-        <span class="pill live"><i class="dot" :class="{ pulse: playing }"></i>数据回放 · 历史记录</span>
-        <span v-if="dataSource === 'simulated'" class="pill warn"><i class="dot"></i>演示模式 · 内置数据</span>
-        <span class="pill warn"><i class="dot"></i>气囊 · 模拟信号</span>
-        <span class="clock num">{{ clockText }}</span>
-      </div>
-    </header>
+    <TopBar :playing="playing" :simulated="dataSource === 'simulated'" />
 
-    <main class="content">
-      <aside class="panel left">
-        <h2>数据</h2>
-        <div class="field">
-          <span class="label">模式</span>
-          <div class="seg">
-            <button :class="{ active: dataSource === 'demo' }" @click="selectDataSource('demo')">真实记录</button>
-            <button :class="{ active: dataSource === 'simulated' }" @click="selectDataSource('simulated')">内置演示</button>
-          </div>
-        </div>
-        <div class="field">
-          <span class="label">回放</span>
-          <div class="seg">
-            <button :class="{ active: sourceType === 'static' }" @click="selectSource('static')">姿态动作</button>
-            <button :class="{ active: sourceType === 'dynamic' }" @click="selectSource('dynamic')">翻身过程</button>
-          </div>
-        </div>
-        <template v-if="sourceType === 'static'">
-          <label class="field">
-            <span class="label">受测者</span>
-            <select :value="personIdx" @change="selectPerson(Number(($event.target as HTMLSelectElement).value))">
-              <option v-for="(p, i) in data?.people" :key="p.name" :value="i">
-                {{ p.name }} · {{ p.height ?? '?' }} cm / {{ p.weight ?? '?' }} kg
-              </option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="label">姿态</span>
-            <select :value="actionIdx" @change="selectAction(Number(($event.target as HTMLSelectElement).value))">
-              <option v-for="(a, i) in person?.actions" :key="a.action" :value="i">
-                {{ actionLabel(a) }}
-              </option>
-            </select>
-          </label>
-        </template>
-        <div class="field">
-          <span class="label">渲染</span>
-          <div class="seg">
-            <button v-for="m in modeOptions" :key="m.value" :class="{ active: mode === m.value }" @click="mode = m.value">
-              {{ m.label }}
-            </button>
-          </div>
-        </div>
-        <div class="field">
-          <span class="label">量程</span>
-          <div class="seg">
-            <button v-for="s in scaleOptions" :key="s.value" :class="{ active: scale === s.value }" @click="scale = s.value">
-              {{ s.label }}
-            </button>
-          </div>
-        </div>
-        <div class="field">
-          <span class="label">图层</span>
-          <div class="checks">
-            <label><input type="checkbox" v-model="showRegions" /> 部位区域</label>
-            <label><input type="checkbox" v-model="showSpine" /> 脊柱参考线</label>
-            <label><input type="checkbox" v-model="showCalf" /> 小腿区域<span class="tiny">3 人已标注</span></label>
-            <label v-if="sourceType === 'dynamic'">
-              <input type="checkbox" v-model="showDynLabels" /> 原始参考标签<span class="tiny">文件自带</span>
-            </label>
-          </div>
-        </div>
-        <div class="legend">
-          <canvas ref="legendCanvas" class="legend-canvas"></canvas>
-          <div v-if="legendTicks" class="legend-ticks num">
-            <span v-for="t in legendTicks" :key="t">{{ t }}</span>
-          </div>
-          <div v-else class="legend-caption">
-            <span>自动量程 · 峰值</span>
-            <span class="num">{{ metrics ? Math.round(metrics.maxRaw) : '-' }}</span>
-          </div>
-        </div>
-      </aside>
-
-      <section class="center">
-        <div class="heatmap-panel">
-          <div class="heatmap-title">
-            <span class="src">{{ sourceLabel }}</span>
-            <span class="title-right">
-              <span v-if="hoverCell" class="hover-tag num">
-                {{ hoverCell.row }},{{ hoverCell.col }} · 净压 {{ hoverCell.value }}
-              </span>
-              <span class="frame-tag num">{{ String(frameIdx).padStart(2, '0') }} / {{ frameCount - 1 }}</span>
-            </span>
-          </div>
-          <HeatmapCanvas
-            :frame="displayFrame"
-            :mode="mode"
-            :scale="scale"
-            :max-height="heatmapMaxHeight"
-            :regions="regions"
-            :spine="spine"
-            :show-regions="showRegions"
-            :show-spine="showSpine"
-            :show-calf="showCalf"
-            :selected-region="selectedRegion"
-            @hover="hoverCell = $event"
-            @region-hover="hoverRegion = $event"
-            @region-select="selectedRegion = $event"
-          />
-          <div class="controls">
-            <button class="ctl" title="上一帧" aria-label="上一帧" @click="stepPrev">
-              <svg viewBox="0 0 16 16" fill="currentColor"><path d="M10.5 3.5 6 8l4.5 4.5" /></svg>
-            </button>
-            <button class="ctl play" :title="playing ? '暂停' : '播放'" :aria-label="playing ? '暂停' : '播放'" @click="togglePlay">
-              <svg v-if="playing" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.6" height="10" rx="1" /><rect x="9.4" y="3" width="2.6" height="10" rx="1" /></svg>
-              <svg v-else viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.8v8.4a.5.5 0 0 0 .76.43l6.9-4.2a.5.5 0 0 0 0-.86L5.76 3.37A.5.5 0 0 0 5 3.8Z" /></svg>
-            </button>
-            <button class="ctl" title="下一帧" aria-label="下一帧" @click="stepNext">
-              <svg viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 3.5 10 8l-4.5 4.5" /></svg>
-            </button>
-            <input
-              class="progress"
-              type="range"
-              :min="0"
-              :max="frameCount - 1"
-              :value="frameIdx"
-              aria-label="回放进度"
-              @input="onSeek"
+    <Transition name="page" mode="out-in">
+      <div v-if="data" key="app" class="stage">
+        <main class="content">
+          <aside class="col-left">
+            <SidebarControls
+              :data-source="dataSource"
+              :source-type="sourceType"
+              :people="data.people"
+              :person-idx="personIdx"
+              :person="person"
+              :action-idx="actionIdx"
+              :mode="mode"
+              :scale="scale"
+              :show-regions="showRegions"
+              :show-spine="showSpine"
+              :show-calf="showCalf"
+              :show-dyn-labels="showDynLabels"
+              @update:data-source="selectDataSource"
+              @update:source-type="selectSource"
+              @update:person-idx="selectPerson"
+              @update:action-idx="selectAction"
+              @update:mode="mode = $event"
+              @update:scale="scale = $event"
+              @update:show-regions="showRegions = $event"
+              @update:show-spine="showSpine = $event"
+              @update:show-calf="showCalf = $event"
+              @update:show-dyn-labels="showDynLabels = $event"
             />
-            <div class="speed-seg">
-              <button
-                v-for="s in speedOptions"
-                :key="s"
-                :class="{ active: speed === s }"
-                @click="setSpeed(s)"
-              >
-                {{ s }}×
-              </button>
+          </aside>
+
+          <section class="col-center">
+            <HeatmapPanel
+              :frame="displayFrame"
+              :mode="mode"
+              :scale="scale"
+              :max-height="heatmapMaxHeight"
+              :regions="regions"
+              :spine="spine"
+              :show-regions="showRegions"
+              :show-spine="showSpine"
+              :show-calf="showCalf"
+              :selected-region="selectedRegion"
+              :source-label="sourceLabel"
+              :frame-idx="frameIdx"
+              :frame-count="frameCount"
+              :playing="playing"
+              :speed="speed"
+              :legend-ticks="legendTicks"
+              :legend-caption="legendCaption"
+              :scale-warning="scaleWarning"
+              @region-hover="hoverRegion = $event"
+              @region-select="selectedRegion = $event"
+              @toggle-play="togglePlay"
+              @step-prev="stepPrev"
+              @step-next="stepNext"
+              @seek="onSeek"
+              @speed="setSpeed"
+            />
+          </section>
+
+          <aside class="col-right">
+            <InsightPanel
+              :pose="sleepPosName"
+              :duration-frames="poseDurationFrames"
+              :pose-note="
+                sourceType === 'dynamic'
+                  ? '翻身过程 · 未使用文件内标签'
+                  : currentAction?.action === 0
+                    ? '空载记录 · 判定为离床'
+                    : undefined
+              "
+              :playing="playing"
+              :metrics="metrics"
+              :history="history"
+              :region-stats="regionStats"
+              :selected-region="selectedRegion"
+              :hover-region="hoverRegion"
+              @select-region="selectedRegion = $event"
+            />
+          </aside>
+        </main>
+
+        <section class="bottom">
+          <PanelCard class="chart-panel" flush title="压力趋势" icon="activity">
+            <div class="chart-inner">
+              <PoseTimeline
+                v-if="sourceType === 'dynamic' && showDynLabels && data"
+                :labels="data.dynamic.labels"
+                :frame-idx="frameIdx"
+                @seek="(i) => controller?.seek(i)"
+              />
+              <MetricsChart
+                :history="history"
+                :frame-idx="frameIdx"
+                :extra-series="
+                  selectedRegion !== null && regionCurve.length
+                    ? [{ label: `${selectedRegionName}平均压力`, color: selectedRegionColor, values: regionCurve }]
+                    : []
+                "
+              />
             </div>
-          </div>
-        </div>
-      </section>
-
-      <aside class="panel right">
-        <h2>睡姿</h2>
-        <SleepPoseCard
-          :pose="sleepPosName"
-          :duration-frames="poseDurationFrames"
-          :fps="10"
-          :note="sourceType === 'dynamic' ? '翻身过程 · 未使用文件内标签' : currentAction?.action === 0 ? '空载记录 · 判定为离床' : undefined"
-        />
-        <h2>压力指标</h2>
-        <MetricCards :metrics="metrics" :history="history" />
-        <h2 class="mt">部位受力<span class="sub">按平均净压排序</span></h2>
-        <RegionRanking :stats="regionStats" :selected="selectedRegion" :hovered="hoverRegion" @select="selectedRegion = $event" />
-        <p class="hint">读数与热力图均为扣除空载后的净压力</p>
-        <p
-          v-if="scale !== 'auto' && metrics && metrics.maxRaw > (scale === 'fixed250' ? 250 : 500)"
-          class="warn"
-        >
-          峰值超出量程 · 顶部已截断
-        </p>
-      </aside>
-    </main>
-
-    <section class="bottom">
-      <div class="chart-panel">
-        <h2>压力趋势</h2>
-        <PoseTimeline
-          v-if="sourceType === 'dynamic' && showDynLabels && data"
-          :labels="data.dynamic.labels"
-          :frame-idx="frameIdx"
-          @seek="(i) => controller?.seek(i)"
-        />
-        <MetricsChart
-          :history="history"
-          :frame-idx="frameIdx"
-          :extra-series="
-            selectedRegion !== null && regionCurve.length
-              ? [{ label: `${selectedRegionName}平均压力`, color: selectedRegionColor, values: regionCurve }]
-              : []
-          "
-        />
+          </PanelCard>
+          <AirbagPanel :source="airbagSource" @preset="onAirbagPreset" />
+        </section>
       </div>
-      <div class="airbag-panel panel">
-        <AirbagPanel :source="airbagSource" @preset="onAirbagPreset" />
+
+      <div v-else key="loading" class="loading" role="status" aria-label="正在加载数据">
+        <svg class="loading-mark" viewBox="0 0 44 44" fill="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="sm-loading" x1="4" y1="3" x2="40" y2="41" gradientUnits="userSpaceOnUse">
+              <stop stop-color="var(--brand-from)" />
+              <stop offset="1" stop-color="var(--brand-to)" />
+            </linearGradient>
+          </defs>
+          <rect width="44" height="44" rx="12" fill="url(#sm-loading)" />
+          <path
+            d="M12 21.5c1.6-2.2 3-2.2 4.6 0s3 2.2 4.6 0 3-2.2 4.6 0 3 2.2 4.6 0"
+            stroke="#fff"
+            stroke-width="2.2"
+            stroke-linecap="round"
+          />
+        </svg>
+        <p class="loading-text">正在加载监测数据…</p>
       </div>
-    </section>
+    </Transition>
   </div>
 </template>
 
@@ -589,366 +463,197 @@ watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(1200px 500px at 50% -180px, var(--accent-soft) 0%, transparent 60%),
+    var(--bg);
 }
 
-/* ---------- 顶栏 ---------- */
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, var(--bg-elev), var(--panel));
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.logo {
-  width: 30px;
-  height: 30px;
-  color: var(--accent);
-}
-.brand-text {
+.stage {
   display: flex;
   flex-direction: column;
-  line-height: 1.15;
-}
-.brand-name {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-.brand-sub {
-  font-size: 11px;
-  color: var(--text-2);
-}
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  padding: 3px 10px;
-}
-.pill .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex: none;
-}
-.pill .dot.pulse {
-  animation: pulse 1.6s ease-in-out infinite;
-}
-.pill.warn .dot {
-  background: var(--c-amber);
-}
-.clock {
-  font-size: 14px;
-  color: var(--text);
-  letter-spacing: 0.04em;
-  margin-left: 4px;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pill .dot.pulse { animation: none; }
+  flex: 1;
+  min-height: 0;
 }
 
-/* ---------- 三栏主体 ---------- */
+/* ---------- 主体三栏 ---------- */
 .content {
   flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 236px 1fr 264px;
-  grid-template-rows: minmax(0, 1fr);
-  gap: 14px;
-  padding: 14px 20px;
+  grid-template-columns: 246px minmax(0, 1fr) 302px;
+  gap: 16px;
+  padding: 16px 20px 0;
+}
+.col-left {
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  animation: enter-y 520ms var(--ease-out) 60ms both;
 }
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-panel);
-  padding: 14px 16px 22px;
-  overflow: auto;
+.col-center {
   min-height: 0;
-}
-.panel h2 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-  letter-spacing: 0.06em;
-  margin-bottom: 10px;
-}
-.panel h2.mt {
-  margin-top: 16px;
-}
-.field {
-  display: block;
-  margin-bottom: 12px;
-}
-.field .label {
-  display: block;
-  font-size: 11.5px;
-  color: var(--text-3);
-  margin-bottom: 6px;
-}
-select {
-  width: 100%;
-  appearance: none;
-  background: var(--panel-inset);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--r-ctl);
-  padding: 7px 26px 7px 10px;
-  font-size: 12.5px;
-  font-family: var(--font-ui);
-  cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239fb0bc' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-}
-select:hover {
-  border-color: var(--border-strong);
-}
-.seg {
   display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
+  justify-content: center;
+  animation: enter-y 560ms var(--ease-out) 120ms both;
 }
-.seg button {
-  flex: 1;
-  min-width: 52px;
-  background: var(--panel-inset);
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-ctl);
-  padding: 5px 6px;
-  font-size: 12px;
-  font-family: var(--font-ui);
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+.col-center :deep(.heatmap-panel) {
+  width: min(100%, 520px);
 }
-.seg button:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
-}
-.seg button.active {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.checks {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  font-size: 12.5px;
-  color: var(--text);
-}
-.checks label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  cursor: pointer;
-}
-.checks input {
-  accent-color: var(--accent);
-  width: 14px;
-  height: 14px;
-}
-.tiny {
-  font-size: 10.5px;
-  color: var(--text-3);
-}
-.sub {
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--text-3);
-  margin-left: 6px;
-  letter-spacing: 0;
-}
-.legend-canvas {
-  width: 100%;
-  height: 12px;
-  border-radius: 3px;
-  image-rendering: pixelated;
-  border: 1px solid var(--border);
-}
-.legend-ticks {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10.5px;
-  color: var(--text-3);
-  margin-top: 4px;
-}
-.legend-caption {
-  font-size: 11px;
-  color: var(--text-3);
-  margin-top: 4px;
-  text-align: center;
+.col-right {
+  min-height: 0;
+  animation: enter-y 520ms var(--ease-out) 180ms both;
 }
 
-/* ---------- 中央热力图（仪器面板） ---------- */
-.center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 0;
-  overflow: auto;
-}
-.heatmap-panel {
-  width: 100%;
-  max-width: 640px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-panel);
-  padding: 12px 14px 14px;
-}
-.heatmap-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 10px;
-}
-.src {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-}
-.title-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.hover-tag {
-  font-size: 11.5px;
-  color: var(--accent);
-}
-.frame-tag {
-  font-size: 11.5px;
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 8px;
-}
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-}
-.ctl {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--panel-inset);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--r-ctl);
-  width: 32px;
-  height: 30px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-.ctl svg {
-  width: 15px;
-  height: 15px;
-}
-.ctl:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-elev);
-}
-.ctl.play {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.progress {
-  flex: 1;
-  accent-color: var(--accent);
-}
-.speed-seg {
-  display: flex;
-  gap: 4px;
-}
-.speed-seg button {
-  background: var(--panel-inset);
-  color: var(--text-3);
-  border: 1px solid var(--border);
-  border-radius: var(--r-ctl);
-  padding: 3px 8px;
-  font-size: 11.5px;
-  font-family: var(--font-mono);
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-}
-.speed-seg button:hover {
-  color: var(--text-2);
-  border-color: var(--border-strong);
-}
-.speed-seg button.active {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-/* ---------- 右栏 ---------- */
-.hint {
-  margin-top: 12px;
-  font-size: 11px;
-  color: var(--text-3);
-  line-height: 1.5;
-}
-.warn {
-  margin-top: 8px;
-  font-size: 11.5px;
-  color: var(--c-amber);
-  line-height: 1.5;
+@keyframes enter-y {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ---------- 底部：趋势 + 气囊 ---------- */
 .bottom {
-  display: flex;
-  gap: 14px;
-  margin: 0 20px 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 430px;
+  gap: 16px;
+  padding: 14px 20px 20px;
+  height: 244px;
   min-height: 0;
+  flex: none;
+  animation: enter-y 520ms var(--ease-out) 240ms both;
 }
 .chart-panel {
-  flex: 1;
   min-width: 0;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-panel);
-  padding: 10px 16px 12px;
-  height: 218px;
+}
+.chart-inner {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 12px 16px 14px;
 }
-.chart-panel h2 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-  letter-spacing: 0.06em;
-  margin-bottom: 6px;
-}
-.chart-panel :deep(.chart-wrap) {
+.chart-inner :deep(.chart-root) {
   flex: 1;
+  min-height: 0;
 }
-.airbag-panel {
-  width: 396px;
-  flex: none;
-  height: 218px;
+
+/* ---------- 加载态 ---------- */
+.loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+.loading-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  animation: breathe 2.2s var(--ease-in-out) infinite;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.94);
+    opacity: 0.82;
+  }
+}
+.loading-text {
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  letter-spacing: 0.03em;
+}
+
+/* ---------- 页面过渡 ---------- */
+.page-enter-active,
+.page-leave-active {
+  transition:
+    opacity var(--dur-page) var(--ease-out),
+    transform var(--dur-page) var(--ease-out);
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(10px) scale(0.998);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.998);
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 1440px) {
+  .content {
+    grid-template-columns: 224px minmax(0, 1fr) 278px;
+  }
+  .bottom {
+    grid-template-columns: minmax(0, 1fr) 396px;
+  }
+}
+@media (max-width: 1220px) {
+  .shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+  .stage {
+    min-height: 0;
+  }
+  .content {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+    padding: 16px 16px 0;
+  }
+  .col-left {
+    overflow: visible;
+    animation-delay: 60ms;
+  }
+  .col-left :deep(.rail) {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 14px 20px;
+  }
+  .col-left :deep(.rail .group) {
+    flex: 1 1 220px;
+    min-width: 200px;
+  }
+  .col-center {
+    animation-delay: 120ms;
+    min-height: 420px;
+  }
+  .col-center :deep(.heatmap-panel) {
+    width: 100%;
+    max-width: 560px;
+  }
+  .col-right {
+    animation-delay: 180ms;
+    min-height: 420px;
+  }
+  .bottom {
+    grid-template-columns: 1fr;
+    height: auto;
+    grid-auto-rows: 232px auto;
+    padding: 14px 16px 20px;
+    animation-delay: 240ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .col-left,
+  .col-center,
+  .col-right,
+  .bottom,
+  .loading-mark {
+    animation: none;
+  }
 }
 </style>

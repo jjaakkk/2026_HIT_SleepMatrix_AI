@@ -10,10 +10,10 @@ const props = defineProps<{
 const emit = defineEmits<{ seek: [index: number] }>();
 
 const POS_COLORS: Record<number, string> = {
-  0: '#4da6ff', // 仰卧
-  1: '#e6b84c', // 俯卧
-  2: '#2fd6b6', // 左侧卧
-  3: '#ff7a6b', // 右侧卧
+  0: '#3b82f6', // 仰卧
+  1: '#e6a23c', // 俯卧
+  2: '#14b8a6', // 左侧卧
+  3: '#f4695f', // 右侧卧
 };
 
 const POS_NAMES: Record<number, string> = { 0: '仰卧', 1: '俯卧', 2: '左侧卧', 3: '右侧卧' };
@@ -34,7 +34,7 @@ const segments = computed<Segment[]>(() => {
     out.push({
       start: i,
       end: j - 1,
-      color: POS_COLORS[props.labels[i]] ?? '#8b949e',
+      color: POS_COLORS[props.labels[i]] ?? '#8b8f98',
       label: POS_NAMES[props.labels[i]] ?? '?',
     });
     i = j;
@@ -43,6 +43,7 @@ const segments = computed<Segment[]>(() => {
 });
 
 const n = computed(() => Math.max(props.labels.length, 1));
+const cursorPct = computed(() => (props.frameIdx / n.value) * 100);
 
 function segStyle(s: Segment) {
   const left = (s.start / n.value) * 100;
@@ -59,40 +60,84 @@ function onClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="pose-timeline" @click="onClick">
-    <div
-      v-for="(s, i) in segments"
-      :key="i"
-      class="seg"
-      :style="segStyle(s)"
-      :title="`${s.label}（文件内标签，仅供参考）`"
-    ></div>
-    <div class="cursor" :style="{ left: (frameIdx / n) * 100 + '%' }"></div>
+  <div class="pose-tl" role="group" aria-label="睡姿参考标签（文件内标签，仅供参考）">
+    <div class="track" @click="onClick">
+      <div
+        v-for="(s, i) in segments"
+        :key="i"
+        class="seg"
+        :style="segStyle(s)"
+        :title="`${s.label}（文件内标签，仅供参考）`"
+      />
+      <div class="cursor" :style="{ left: cursorPct + '%' }" aria-hidden="true" />
+    </div>
+    <div class="cap">
+      <span class="cap-label">睡姿参考标签</span>
+      <span class="cap-note">文件自带 · 仅供参考</span>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.pose-timeline {
+.pose-tl {
+  flex: none;
+  margin-bottom: 2px;
+}
+.track {
   position: relative;
-  height: 14px;
-  background: #21262d;
-  border-radius: 4px;
+  height: 16px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xs);
   overflow: hidden;
   cursor: pointer;
-  margin-bottom: 6px;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.track:hover {
+  border-color: var(--border-strong);
 }
 .seg {
   position: absolute;
   top: 0;
   bottom: 0;
-  opacity: 0.75;
+  opacity: 0.82;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.track:hover .seg {
+  opacity: 0.95;
 }
 .cursor {
   position: absolute;
-  top: -2px;
-  bottom: -2px;
+  top: -1px;
+  bottom: -1px;
   width: 2px;
-  background: #e6edf3;
+  background: var(--text-1);
+  border-radius: 1px;
   z-index: 2;
+  transition: left var(--dur-fast) linear;
+}
+.cursor::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-1);
+}
+.cap {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 10px;
+}
+.cap-label {
+  color: var(--text-2);
+}
+.cap-note {
+  color: var(--text-3);
 }
 </style>

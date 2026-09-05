@@ -172,6 +172,38 @@ try {
     const r3 = contrast(c.text3, c.bg);
     check('主文本对比度 ≥ 7（AAA）', r1 >= 7, `${r1.toFixed(1)}:1`);
     check('三级文本对比度 ≥ 4.5', r3 >= 4.5, `${r3.toFixed(1)}:1`);
+
+    // 内部滚动条（用户要求：所有内容一屏呈现，不依赖滚轮）
+    const scrollIssues = await page.evaluate(() => {
+      const probes: Array<[string, string]> = [
+        ['.col-left', ''],
+        ['.col-right', '.insight .inner'],
+        ['.chart-panel', '.chart-inner'],
+        ['.airbag-panel', '.airbag'],
+        ['.ranking-panel', '.ranking-inner'],
+      ];
+      const bad: string[] = [];
+      for (const [rootSel, innerSel] of probes) {
+        const root = document.querySelector(rootSel) as HTMLElement | null;
+        if (!root) continue;
+        const inner = innerSel ? (root.querySelector(innerSel) as HTMLElement | null) : root;
+        if (!inner) continue;
+        if (inner.scrollHeight > inner.clientHeight + 2) {
+          bad.push(`${rootSel} ${innerSel} (${inner.scrollHeight} > ${inner.clientHeight})`);
+        }
+      }
+      return bad;
+    });
+    check('无内部滚动条（内容一屏呈现）', scrollIssues.length === 0, JSON.stringify(scrollIssues));
+
+    // 热力图容器收缩包裹（不留黑块）
+    const wrapGap = await page.evaluate(() => {
+      const wrap = document.querySelector('.heatmap-wrap') as HTMLElement | null;
+      const canvas = document.querySelector('.heatmap-wrap canvas') as HTMLElement | null;
+      if (!wrap || !canvas) return -1;
+      return Math.abs(wrap.getBoundingClientRect().width - canvas.getBoundingClientRect().width);
+    });
+    check('热力图容器收缩包裹画布（无黑块）', wrapGap >= 0 && wrapGap <= 2, `偏差 ${wrapGap}px`);
   }
 
   // ---- 交互审计 ----
@@ -287,6 +319,35 @@ try {
     [...document.querySelectorAll('.speed-seg button')].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent?.trim(),
   );
   check('速度分段控件切换', speedActive === '4×', String(speedActive));
+
+  // ---- 气囊：点击行选中 + 滑杆调节所选气囊 ----
+  await page.evaluate(() => {
+    const zones = [...document.querySelectorAll('.airbag .zone')] as HTMLElement[];
+    zones.find((z) => z.querySelector('.zid')?.textContent === '40')?.click();
+  });
+  await sleep(250);
+  const airbagTag = await page.evaluate(() => document.querySelector('.airbag .zone-tag')?.textContent?.trim());
+  check('气囊行选中 → 滑杆目标切换为所选气囊', airbagTag === '40 · 肩背', String(airbagTag));
+  await page.evaluate(() => {
+    const input = document.querySelector('.airbag .slider-row input') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, '70');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await sleep(800); // 充气爬坡 600ms
+  const airbagRows = await page.evaluate(() => {
+    const read = (id: string) =>
+      [...document.querySelectorAll('.airbag .zone')]
+        .find((z) => z.querySelector('.zid')?.textContent === id)
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim();
+    return { z40: read('40'), z41: read('41') };
+  });
+  check(
+    '滑杆只调节所选气囊（40→70%、41 保持）',
+    airbagRows.z40?.includes('70%') === true && !airbagRows.z41?.includes('70%'),
+    JSON.stringify(airbagRows),
+  );
 
   // 分段控件滑动块与激活按钮对齐精度（等待弹簧过渡完全沉降）
   await sleep(500);

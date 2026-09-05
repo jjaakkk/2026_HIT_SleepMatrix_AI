@@ -14,15 +14,16 @@ const props = defineProps<{
   extraSeries?: { label: string; color: string; values: number[] }[];
 }>();
 
-/** 主图曲线（压力，单轴）——颜色与指标卡/图例一致 */
+/** 主图曲线（压力，单轴）——颜色取自语义令牌（与指标卡/图例一致，随主题） */
 const mainSeries = [
-  { key: 'maxRaw', label: '最大压力', color: '#f4695f', value: (m: FrameMetrics) => m.maxRaw },
-  { key: 'meanNet', label: '平均压力', color: '#6c5ce0', value: (m: FrameMetrics) => m.meanNet },
+  { key: 'maxRaw', label: '最大压力', varName: '--c-coral', fallback: '#f4695f', value: (m: FrameMetrics) => m.maxRaw },
+  { key: 'meanNet', label: '平均压力', varName: '--accent', fallback: '#0d7a6b', value: (m: FrameMetrics) => m.meanNet },
 ];
 /** 接触面积（0-100%，独立小图，单轴） */
 const contactSeries = {
   label: '接触面积 %',
-  color: '#3b82f6',
+  varName: '--c-blue',
+  fallback: '#3b82f6',
   value: (m: FrameMetrics) => contactIndex(m),
 };
 
@@ -46,6 +47,9 @@ function alpha(hex: string, a: number): string {
   }
   return hex;
 }
+function resolveSeriesColor(s: { varName: string; fallback: string }): string {
+  return cssColor(s.fallback, s.varName);
+}
 
 function draw() {
   const c = canvasRef.value;
@@ -65,6 +69,9 @@ function draw() {
   const grid = cssColor('rgba(120,125,140,0.12)', '--border');
   const tick = cssColor('#8f9199', '--text-3');
   const playhead = cssColor('#1a1a1e', '--text-1');
+  const maxRawColor = resolveSeriesColor(mainSeries[0]);
+  const meanColor = resolveSeriesColor(mainSeries[1]);
+  const contactColor = resolveSeriesColor(contactSeries);
 
   const n = props.history.length;
   if (n === 0) {
@@ -158,8 +165,8 @@ function draw() {
   }
 
   // 平均压力面积 + 线（主视觉）
-  strokeSeries(props.history.map(mainSeries[1].value), mainSeries[1].color, 1.8, false, true);
-  strokeSeries(props.history.map(mainSeries[0].value), mainSeries[0].color, 1.5, false, false);
+  strokeSeries(props.history.map(mainSeries[1].value), meanColor, 1.8, false, true);
+  strokeSeries(props.history.map(mainSeries[0].value), maxRawColor, 1.5, false, false);
   for (const es of props.extraSeries ?? []) {
     if (es.values.length === 0) continue;
     strokeSeries(es.values.slice(0, n), es.color, 2, true, false);
@@ -186,8 +193,8 @@ function draw() {
   ctx.stroke();
   const cpts = props.history.map((m, i) => ({ x: xOf(i), y: cY(contactSeries.value(m)) }));
   const cgrad = ctx.createLinearGradient(0, stripY, 0, stripBottom);
-  cgrad.addColorStop(0, alpha(contactSeries.color, 0.2));
-  cgrad.addColorStop(1, alpha(contactSeries.color, 0));
+  cgrad.addColorStop(0, alpha(contactColor, 0.2));
+  cgrad.addColorStop(1, alpha(contactColor, 0));
   ctx.beginPath();
   ctx.moveTo(cpts[0].x, stripBottom);
   for (const p of cpts) ctx.lineTo(p.x, p.y);
@@ -195,7 +202,7 @@ function draw() {
   ctx.closePath();
   ctx.fillStyle = cgrad;
   ctx.fill();
-  ctx.strokeStyle = contactSeries.color;
+  ctx.strokeStyle = contactColor;
   ctx.lineWidth = 1.4;
   ctx.lineJoin = 'round';
   ctx.beginPath();
@@ -234,13 +241,13 @@ function onMove(e: MouseEvent) {
   const idx = Math.min(Math.max(Math.round(((x - PAD.left) / plotW) * (n - 1)), 0), n - 1);
   const m = props.history[idx];
   const rows = [
-    ...mainSeries.map((s) => ({ label: s.label, color: s.color, v: s.value(m).toFixed(1) })),
+    ...mainSeries.map((s) => ({ label: s.label, color: resolveSeriesColor(s), v: s.value(m).toFixed(1) })),
     ...(props.extraSeries ?? []).map((es) => ({
       label: es.label,
       color: es.color,
       v: (es.values[Math.min(idx, es.values.length - 1)] ?? 0).toFixed(1),
     })),
-    { label: contactSeries.label, color: contactSeries.color, v: contactSeries.value(m).toFixed(1) },
+    { label: contactSeries.label, color: resolveSeriesColor(contactSeries), v: contactSeries.value(m).toFixed(1) },
   ];
   hover.value = { x, y, idx, values: rows };
 }
@@ -248,18 +255,34 @@ function onLeave() {
   hover.value = null;
 }
 
+let themeObserver: MutationObserver | null = null;
 onMounted(() => {
   draw();
   window.addEventListener('resize', draw);
+  // 主题切换（html[data-theme]）后重绘，系列颜色跟随语义令牌
+  themeObserver = new MutationObserver(draw);
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 });
-onBeforeUnmount(() => window.removeEventListener('resize', draw));
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', draw);
+  themeObserver?.disconnect();
+});
 watch(() => [props.history, props.frameIdx], draw);
 
 const legendItems = computed(() => [
-  ...mainSeries.map((s) => ({ label: s.label, color: s.color, dashed: false })),
-  ...(props.extraSeries ?? []).map((es) => ({ label: es.label, color: es.color, dashed: true })),
-  { label: contactSeries.label, color: contactSeries.color, dashed: false },
+  ...mainSeries.map((s) => ({ label: s.label, varName: s.varName, dashed: false })),
+  ...(props.extraSeries ?? []).map((es) => ({ label: es.label, varName: undefined, rawColor: es.color, dashed: true })),
+  { label: contactSeries.label, varName: contactSeries.varName, dashed: false },
 ]);
+
+function legendSwatchStyle(it: { varName?: string; rawColor?: string; dashed: boolean }) {
+  const color = it.varName ? `var(${it.varName})` : it.rawColor;
+  return {
+    background: it.dashed
+      ? `repeating-linear-gradient(90deg, ${color} 0 5px, transparent 5px 9px)`
+      : color,
+  };
+}
 
 /** 悬浮提示定位：跟随指针，纵向夹紧避免溢出 */
 function tooltipStyle(h: { x: number; y: number }) {
@@ -271,15 +294,7 @@ function tooltipStyle(h: { x: number; y: number }) {
   <div class="chart-root">
     <div class="legend">
       <span v-for="it in legendItems" :key="it.label" class="legend-item">
-        <span
-          class="legend-swatch"
-          :style="{
-            background: it.dashed
-              ? `repeating-linear-gradient(90deg, ${it.color} 0 5px, transparent 5px 9px)`
-              : it.color,
-          }"
-          aria-hidden="true"
-        />
+        <span class="legend-swatch" :style="legendSwatchStyle(it)" aria-hidden="true" />
         {{ it.label }}
       </span>
     </div>

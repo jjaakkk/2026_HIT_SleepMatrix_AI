@@ -23,8 +23,14 @@ onBeforeUnmount(() => off?.());
 function stateOf(id: string) {
   return states.value.find((s) => s.zoneId === id)!;
 }
-function onSlider(id: string, e: Event) {
-  props.source.setTarget(id, Number((e.target as HTMLInputElement).value));
+/** 当前选中的气囊（点击行选中，滑杆调节该气囊） */
+const selectedId = ref('41');
+const selectedZone = computed(() => AIRBAG_ZONES.find((z) => z.id === selectedId.value) ?? AIRBAG_ZONES[1]);
+function selectZone(id: string) {
+  selectedId.value = id;
+}
+function onSlider(e: Event) {
+  props.source.setTarget(selectedId.value, Number((e.target as HTMLInputElement).value));
 }
 function applyPreset(name: string) {
   const p = AIRBAG_PRESETS.find((x) => x.name === name);
@@ -36,7 +42,7 @@ function applyPreset(name: string) {
 const left = computed(() => AIRBAG_ZONES.filter((z) => z.side === '左半区'));
 const right = computed(() => AIRBAG_ZONES.filter((z) => z.side === '右半区'));
 
-const waist41 = computed(() => stateOf('41').pressure);
+const sliderValue = computed(() => stateOf(selectedId.value).pressure);
 </script>
 
 <template>
@@ -63,7 +69,15 @@ const waist41 = computed(() => stateOf('41').pressure);
       <div class="groups">
         <div v-for="(zones, gi) in [left, right]" :key="gi" class="group">
           <div class="group-title">{{ gi === 0 ? '左半区' : '右半区' }}</div>
-          <div v-for="z in zones" :key="z.id" class="zone">
+          <button
+            v-for="z in zones"
+            :key="z.id"
+            type="button"
+            class="zone"
+            :class="{ sel: selectedId === z.id }"
+            :title="`点击选中 ${z.id} 号气囊（${z.regionHint}），滑杆调节其充气程度`"
+            @click="selectZone(z.id)"
+          >
             <span
               class="zid num"
               :style="{ color: z.color, borderColor: `color-mix(in srgb, ${z.color} 45%, transparent)`, background: `color-mix(in srgb, ${z.color} 10%, transparent)` }"
@@ -78,7 +92,7 @@ const waist41 = computed(() => stateOf('41').pressure);
             </span>
             <span class="pct num">{{ stateOf(z.id).pressure.toFixed(0) }}%</span>
             <span class="st">{{ airbagStateText(stateOf(z.id).pressure) }}</span>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -89,12 +103,13 @@ const waist41 = computed(() => stateOf('41').pressure);
           type="range"
           min="0"
           max="100"
-          :value="waist41"
-          aria-label="调节 41 号气囊（腰部）"
-          @input="onSlider('41', $event)"
+          :value="sliderValue"
+          :aria-label="`调节 ${selectedZone.id} 号气囊（${selectedZone.regionHint}）`"
+          @input="onSlider"
         />
-        <span class="zone-tag num">41 · 腰</span>
+        <span class="zone-tag num">{{ selectedZone.id }} · {{ selectedZone.regionHint }}</span>
       </div>
+      <p class="foot">点击气囊行选中 · 滑杆调节所选气囊 · 预设一键切换</p>
     </div>
   </PanelCard>
 </template>
@@ -107,8 +122,8 @@ const waist41 = computed(() => stateOf('41').pressure);
 .airbag {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 13px 16px 13px;
+  gap: 8px;
+  padding: 12px 16px 12px;
   height: 100%;
   min-height: 0;
 }
@@ -170,10 +185,31 @@ const waist41 = computed(() => stateOf('41').pressure);
 }
 .zone {
   display: grid;
-  grid-template-columns: 24px 26px 1fr 38px 30px;
+  grid-template-columns: 24px 30px minmax(0, 1fr) 42px 32px;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-size: var(--fs-2xs);
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  padding: 3px 5px;
+  margin: 0 -5px;
+  text-align: left;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.zone:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.zone.sel {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft-strong);
 }
 .zid {
   border: 1px solid;
@@ -220,7 +256,7 @@ const waist41 = computed(() => stateOf('41').pressure);
   color: var(--text-2);
   flex: none;
   border-top: 1px solid var(--border-subtle);
-  padding-top: 10px;
+  padding-top: 8px;
 }
 .slider-icon {
   color: var(--text-3);
@@ -237,7 +273,20 @@ const waist41 = computed(() => stateOf('41').pressure);
 }
 .zone-tag {
   white-space: nowrap;
-  color: var(--text-3);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 500;
+  border: 1px solid var(--accent-soft-strong);
+  background: var(--accent-soft);
+  border-radius: var(--r-pill);
+  padding: 1.5px 9px;
+}
+.foot {
+  flex: none;
   font-size: 10px;
+  color: var(--text-3);
+  text-align: right;
+  padding: 0 2px;
+  margin-top: -2px;
 }
 </style>

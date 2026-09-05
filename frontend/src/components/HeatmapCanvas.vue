@@ -124,10 +124,16 @@ function onRegionClick(i: number) {
   emit('region-select', i);
 }
 
-onMounted(() => {
+/** 画布区（wrap 的父级 .canvas-zone）：wrap 为 fit-content 收缩布局，宽度须从画布区测量 */
+function measureBase(): HTMLElement | null {
   const wrap = canvasRef.value?.parentElement;
-  if (wrap) {
-    const w = wrap.clientWidth;
+  return wrap?.parentElement ?? null;
+}
+
+onMounted(() => {
+  const zone = measureBase();
+  if (zone) {
+    const w = zone.clientWidth;
     const h = props.maxHeight ?? Infinity;
     cssWidth.value = Math.min(w, (h * COLS) / ROWS);
   }
@@ -136,9 +142,9 @@ onMounted(() => {
 });
 
 function onResize() {
-  const wrap = canvasRef.value?.parentElement;
-  if (wrap) {
-    const w = wrap.clientWidth;
+  const zone = measureBase();
+  if (zone) {
+    const w = zone.clientWidth;
     const h = props.maxHeight ?? Infinity;
     cssWidth.value = Math.min(w, (h * COLS) / ROWS);
   }
@@ -258,13 +264,17 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize));
 <style scoped>
 .heatmap-wrap {
   position: relative;
-  width: 100%;
+  /* 收缩包裹画布实际尺寸：深色底只存在于热力图之下，不留黑块 */
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
   border-radius: var(--r-md);
   overflow: hidden;
   background: #0c0f15;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.05),
-    inset 0 1px 8px rgba(0, 0, 0, 0.35);
+    inset 0 1px 8px rgba(0, 0, 0, 0.35),
+    var(--shadow-sm);
 }
 canvas {
   display: block;

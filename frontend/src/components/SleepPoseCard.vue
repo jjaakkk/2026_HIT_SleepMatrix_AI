@@ -27,7 +27,7 @@ const POSE_COLORS: Record<string, string> = {
   离床: '#8b8f98',
   '离床 · 无人': '#8b8f98',
   在床: '#14b8a6',
-  动态过程: '#6c5ce0',
+  动态过程: '#0d7a6b',
 };
 
 const color = computed(() => POSE_COLORS[props.pose] ?? '#8b8f98');

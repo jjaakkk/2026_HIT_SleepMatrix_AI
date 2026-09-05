@@ -1,13 +1,11 @@
 <script setup lang="ts">
 /**
- * 右侧洞察面板：睡姿状态 + 压力指标 + 部位受力排行。
+ * 右侧洞察面板：睡姿状态 + 压力指标（部位受力排行位于底部面板，与热力图相邻）。
  */
 import PanelCard from './ui/PanelCard.vue';
 import SleepPoseCard from './SleepPoseCard.vue';
 import MetricCards from './MetricCards.vue';
-import RegionRanking from './RegionRanking.vue';
 import type { FrameMetrics } from '../core/metrics';
-import type { RegionMetrics } from '../core/region-stats';
 
 defineProps<{
   pose: string;
@@ -21,12 +19,7 @@ defineProps<{
   predicting?: boolean;
   metrics: FrameMetrics | null;
   history: FrameMetrics[];
-  regionStats: RegionMetrics[];
-  selectedRegion: number | null;
-  hoverRegion: number | null;
 }>();
-
-const emit = defineEmits<{ 'select-region': [index: number] }>();
 </script>
 
 <template>
@@ -53,21 +46,6 @@ const emit = defineEmits<{ 'select-region': [index: number] }>();
         <MetricCards :metrics="metrics" :history="history" />
         <p class="footnote">读数与热力图均为扣除空载后的净压力</p>
       </section>
-
-      <div class="divider" role="separator" />
-
-      <section class="sec">
-        <h4 class="sec-title">
-          部位受力
-          <span class="sec-sub">按平均净压排序</span>
-        </h4>
-        <RegionRanking
-          :stats="regionStats"
-          :selected="selectedRegion"
-          :hovered="hoverRegion"
-          @select="emit('select-region', $event)"
-        />
-      </section>
     </div>
   </PanelCard>
 </template>
@@ -80,9 +58,8 @@ const emit = defineEmits<{ 'select-region': [index: number] }>();
 .inner {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 16px;
   padding: 16px 16px 18px;
-  overflow-y: auto;
   height: 100%;
   min-height: 0;
 }
@@ -99,12 +76,6 @@ const emit = defineEmits<{ 'select-region': [index: number] }>();
   color: var(--text-3);
   margin-bottom: 10px;
   padding-left: 1px;
-}
-.sec-sub {
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--text-3);
-  opacity: 0.85;
 }
 .divider {
   height: 1px;

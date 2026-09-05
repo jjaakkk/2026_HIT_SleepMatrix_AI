@@ -227,7 +227,7 @@ const poseSourceOptions = computed(() => [
 .rail {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
   padding: 4px 2px 8px 0;
   overflow-y: auto;
   min-height: 0;

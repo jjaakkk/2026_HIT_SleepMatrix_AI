@@ -25,7 +25,7 @@ Vite + Vue 3 + TypeScript + Canvas（热力图 / 趋势图自绘）+ 自建设�
 
 ## 设计系统（v3）
 
-浅色优先（暖白 + 鸢尾紫主色），支持暗色主题与系统偏好，全部语义令牌驱动（详见 `docs/设计系统-v3.md`）：
+浅色优先（冷调瓷白 + 深松绿主色），支持暗色主题与系统偏好，全部语义令牌驱动（详见 `docs/设计系统-v3.md`）：
 
 - 字体：Inter Variable（UI/数字）+ IBM Plex Mono（仪表读数）+ Noto Sans SC（中文回退）
 - 原语：`ui/Icon`（统一 24×24 图标集）、`UiSegmented`（滑动指示块）、`UiSelect`（fixed 定位下拉）、`UiSwitch`、`PanelCard`、`UiBadge`

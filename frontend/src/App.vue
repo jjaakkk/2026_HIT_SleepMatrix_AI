@@ -7,6 +7,7 @@ import InsightPanel from './components/InsightPanel.vue';
 import MetricsChart from './components/MetricsChart.vue';
 import AirbagPanel from './components/AirbagPanel.vue';
 import PoseTimeline from './components/PoseTimeline.vue';
+import RegionRanking from './components/RegionRanking.vue';
 import PanelCard from './components/ui/PanelCard.vue';
 import type { DemoData } from './core/demo';
 import type { HeatmapMode, ScaleMode } from './render/heatmap.ts';
@@ -149,9 +150,9 @@ const metrics = computed(() => {
   return computeMetrics(currentFrame.value, bgForMetrics.value, 20);
 });
 
-// 视口高度 → 热力图最大高度（保证底部曲线图可见）
+// 视口高度 → 热力图最大高度（顶栏 58 + 上边距 16 + 底部行 308 + 面板镶边 ~150）
 const viewportH = ref(window.innerHeight);
-const heatmapMaxHeight = computed(() => Math.max(240, viewportH.value - 480));
+const heatmapMaxHeight = computed(() => Math.max(240, viewportH.value - 516));
 
 const framesList = computed<ArrayLike<number>[]>(() =>
   sourceType.value === 'dynamic'
@@ -426,6 +427,25 @@ watch(
               @seek="onSeek"
               @speed="setSpeed"
             />
+            <PanelCard class="chart-panel" flush title="压力趋势" icon="activity">
+              <div class="chart-inner">
+                <PoseTimeline
+                  v-if="sourceType === 'dynamic' && showDynLabels && data"
+                  :labels="data.dynamic.labels"
+                  :frame-idx="frameIdx"
+                  @seek="(i) => controller?.seek(i)"
+                />
+                <MetricsChart
+                  :history="history"
+                  :frame-idx="frameIdx"
+                  :extra-series="
+                    selectedRegion !== null && regionCurve.length
+                      ? [{ label: `${selectedRegionName}平均压力`, color: selectedRegionColor, values: regionCurve }]
+                      : []
+                  "
+                />
+              </div>
+            </PanelCard>
           </section>
 
           <aside class="col-right">
@@ -439,35 +459,22 @@ watch(
               :predicting="inference.predicting.value"
               :metrics="metrics"
               :history="history"
-              :region-stats="regionStats"
-              :selected-region="selectedRegion"
-              :hover-region="hoverRegion"
-              @select-region="selectedRegion = $event"
             />
           </aside>
         </main>
 
         <section class="bottom">
-          <PanelCard class="chart-panel" flush title="压力趋势" icon="activity">
-            <div class="chart-inner">
-              <PoseTimeline
-                v-if="sourceType === 'dynamic' && showDynLabels && data"
-                :labels="data.dynamic.labels"
-                :frame-idx="frameIdx"
-                @seek="(i) => controller?.seek(i)"
-              />
-              <MetricsChart
-                :history="history"
-                :frame-idx="frameIdx"
-                :extra-series="
-                  selectedRegion !== null && regionCurve.length
-                    ? [{ label: `${selectedRegionName}平均压力`, color: selectedRegionColor, values: regionCurve }]
-                    : []
-                "
+          <AirbagPanel :source="airbagSource" @preset="onAirbagPreset" />
+          <PanelCard class="ranking-panel" flush title="部位受力" subtitle="按平均净压排序" icon="bar-chart">
+            <div class="ranking-inner">
+              <RegionRanking
+                :stats="regionStats"
+                :selected="selectedRegion"
+                :hovered="hoverRegion"
+                @select="selectedRegion = $event"
               />
             </div>
           </PanelCard>
-          <AirbagPanel :source="airbagSource" @preset="onAirbagPreset" />
         </section>
       </div>
 
@@ -516,7 +523,7 @@ watch(
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 246px minmax(0, 1fr) 302px;
+  grid-template-columns: 236px minmax(0, 1fr) 300px;
   gap: 16px;
   padding: 16px 20px 0;
 }
@@ -525,14 +532,16 @@ watch(
   overflow-y: auto;
   animation: enter-y 520ms var(--ease-out) 60ms both;
 }
+/* 中部双面板：热力图 + 压力趋势 */
 .col-center {
   min-height: 0;
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: minmax(380px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 16px;
   animation: enter-y 560ms var(--ease-out) 120ms both;
 }
 .col-center :deep(.heatmap-panel) {
-  width: min(100%, 520px);
+  min-width: 0;
 }
 .col-right {
   min-height: 0;
@@ -550,19 +559,20 @@ watch(
   }
 }
 
-/* ---------- 底部：趋势 + 气囊 ---------- */
+/* ---------- 底部：气囊 + 部位排行 ---------- */
 .bottom {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 430px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 16px;
-  padding: 14px 20px 20px;
-  height: 244px;
+  padding: 12px 20px 14px;
+  height: 280px;
   min-height: 0;
   flex: none;
   animation: enter-y 520ms var(--ease-out) 240ms both;
 }
 .chart-panel {
   min-width: 0;
+  height: 100%;
 }
 .chart-inner {
   display: flex;
@@ -574,6 +584,15 @@ watch(
 .chart-inner :deep(.chart-root) {
   flex: 1;
   min-height: 0;
+}
+.ranking-panel {
+  min-width: 0;
+  height: 100%;
+}
+.ranking-inner {
+  height: 100%;
+  min-height: 0;
+  padding: 10px 14px 14px;
 }
 
 /* ---------- 加载态 ---------- */
@@ -628,10 +647,10 @@ watch(
 /* ---------- 响应式 ---------- */
 @media (max-width: 1440px) {
   .content {
-    grid-template-columns: 224px minmax(0, 1fr) 278px;
+    grid-template-columns: 216px minmax(0, 1fr) 276px;
   }
   .bottom {
-    grid-template-columns: minmax(0, 1fr) 396px;
+    grid-template-columns: minmax(0, 1fr) 330px;
   }
 }
 @media (max-width: 1220px) {
@@ -663,11 +682,13 @@ watch(
   }
   .col-center {
     animation-delay: 120ms;
+    grid-template-columns: 1fr;
+    grid-auto-rows: minmax(400px, auto) minmax(240px, auto);
     min-height: 420px;
   }
   .col-center :deep(.heatmap-panel) {
     width: 100%;
-    max-width: 560px;
+    max-width: 620px;
   }
   .col-right {
     animation-delay: 180ms;
@@ -676,9 +697,12 @@ watch(
   .bottom {
     grid-template-columns: 1fr;
     height: auto;
-    grid-auto-rows: 232px auto;
+    grid-auto-rows: 244px auto;
     padding: 14px 16px 20px;
     animation-delay: 240ms;
+  }
+  .ranking-inner :deep(.ranking) {
+    max-height: 280px;
   }
 }
 

@@ -47,7 +47,7 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
 .ranking {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .empty {
   display: flex;
@@ -65,8 +65,8 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
   grid-template-columns: 18px minmax(0, 1fr) 44px 32px;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
-  padding: 4px 9px 4px 6px;
+  min-height: 26px;
+  padding: 2px 9px 2px 6px;
   background: transparent;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);

@@ -1,1 +1,1 @@
-"""SleepMatrix AI backend package."""
+"""智能床垫后端模块。"""

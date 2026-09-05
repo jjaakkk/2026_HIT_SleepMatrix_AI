@@ -51,7 +51,7 @@ class PostureSVMClassifier:
         if not self.model_path.is_file():
             raise FileNotFoundError(
                 f"Posture SVM model was not found at {self.model_path}. "
-                "Train it with `python -m backend.algorithms.posture_svm.train_svm`."
+                "Train it with `python train/posture_svm/train_svm.py`."
             )
 
         try:

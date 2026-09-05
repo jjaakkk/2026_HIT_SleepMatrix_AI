@@ -1,6 +1,6 @@
 # SVM 睡姿识别模块
 
-本模块实现 44×24 压力矩阵的四分类。矩阵尺寸、标签和动作映射以 `shared/contracts/posture.json` 为唯一公共定义；数据读取、基础预处理与通用增强位于 `backend/data_utils/`；可复用的压力统计和空间特征位于 `backend/features/`。
+本模块实现 44×24 压力矩阵的四分类。矩阵尺寸、标签和动作映射以 `shared/contracts/posture.json` 为唯一公共定义；数据读取、基础预处理与通用增强位于 `backend/data_utils/`；可复用的压力统计和空间特征位于 `backend/features/`。训练入口位于 `train/posture_svm/`。
 
 `posture_svm/features.py` 只保留 SVM 模型专用的 HOG 参数和 997 维特征拼接顺序。公共模块提供基础计算，但不定义具体模型的最终输入向量。
 
@@ -33,7 +33,7 @@ dataset/
 
 ```powershell
 conda activate sleepMatrix
-python backend\algorithms\posture_svm\train_svm.py
+python train\posture_svm\train_svm.py
 ```
 
 默认执行以下流程：
@@ -42,14 +42,14 @@ python backend\algorithms\posture_svm\train_svm.py
 2. 在原始训练集内部使用按受试者分组的交叉验证选择 RBF-SVM 参数。
 3. 选定参数后，只对训练集添加小幅平移和噪声；增强帧不会充当验证或测试数据。
 4. 复用公共压力预处理和具名特征原语，再提取 HOG 并按 SVM 协议拼接为 997 维特征向量。
-5. 将模型写入 `backend/models/posture_svm.joblib`，指标写入同目录的 `posture_svm.metrics.json`。
+5. 将模型和指标写入本地 `backend/models/`；该目录整体不提交 Git。
 
-模型二进制由训练命令在本地生成，不提交 Git；指标 JSON 可以提交用于记录和比较实验结果。
+模型和指标由训练命令在本地生成，`backend/models/` 整个目录不提交 Git。
 
 数据说明指出最终数据已经包含镜像帧，因此默认不会再次左右翻转。只有确认拿到的是未增强原始数据时才使用：
 
 ```powershell
-python backend\algorithms\posture_svm\train_svm.py --include-horizontal-mirror
+python train\posture_svm\train_svm.py --include-horizontal-mirror
 ```
 
 可用 `--help` 查看数据目录、模型路径、随机种子、增强强度和并行数等参数。

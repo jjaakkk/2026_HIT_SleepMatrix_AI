@@ -40,7 +40,6 @@ SleepMatrix_AI/
 │   │   ├── posture_svm/                   # 【成员 A】传统机器学习睡姿识别
 │   │   │   ├── __init__.py
 │   │   │   ├── features.py                # HOG 与 SVM 997 维特征拼接协议
-│   │   │   ├── train_svm.py               # 分组划分、调参、评估和模型保存
 │   │   │   ├── inference.py               # SVM 推理接口
 │   │   │   └── README.md
 │   │   │
@@ -57,9 +56,7 @@ SleepMatrix_AI/
 │   │       ├── enhance.py
 │   │       └── compare.py
 │   │
-│   └── models/                            # 本地训练产物；二进制模型不提交 Git
-│       ├── posture_svm.joblib
-│       └── posture_cnn.pth
+│   └── models/                            # 本地训练产物；整个目录不提交 Git
 │
 ├── frontend/                              # 【成员 E】只通过共享契约和 HTTP API 获取数据
 │   ├── index.html
@@ -73,13 +70,12 @@ SleepMatrix_AI/
 │   │   └── airbag_anim.js
 │   └── assets/
 │
-├── dataset/                               # 数据集；提交 TXT/JSON，忽略派生 PNG
-│   ├── README.md                          # 数据来源、内容和 Git 规则
-│   └── 睡姿 区域划分data/
-│       ├── readme                         # 受试者身高、体重信息
-│       ├── 睡姿数据/                      # 33 名受试者的动作 TXT
-│       └── 区域划分/
-│           └── data.json                  # 身体区域划分标注
+├── dataset/                               # 本地数据集；整个目录不提交 Git
+│
+├── train/                                 # 训练入口脚本
+│   └── posture_svm/
+│       ├── train_svm.py                  # SVM 划分、调参、训练和评估
+│       └── README.md                     # SVM 训练使用说明
 │
 ├── docs/
 │   ├── api/                               # 接口说明与示例
@@ -120,7 +116,7 @@ dataset/睡姿 区域划分data/睡姿数据/
 下面的命令使用现有数据完成按受试者划分、分组交叉验证、模型训练和测试集评估：
 
 ```powershell
-python backend\algorithms\posture_svm\train_svm.py `
+python train\posture_svm\train_svm.py `
   --dataset-dir "dataset\睡姿 区域划分data\睡姿数据" `
   --model-path "backend\models\posture_svm.joblib" `
   --jitter-copies 0 `
@@ -132,11 +128,11 @@ python backend\algorithms\posture_svm\train_svm.py `
 训练完成后生成：
 
 ```text
-backend/models/posture_svm.joblib       # 模型、特征配置和数据契约版本
-backend/models/posture_svm.metrics.json # 准确率、Precision、Recall、F1 和混淆矩阵
+backend/models/posture_svm.joblib       # 本地生成的模型（不提交）
+backend/models/posture_svm.metrics.json # 本地生成的指标（不提交）
 ```
 
-`.joblib` 属于本地可再生的模型二进制，不提交 Git；指标 JSON 可以提交。其他成员拉取代码和数据后，可运行同一训练命令生成本地模型。
+模型和指标均属于本地训练产物，不提交 Git。其他成员需要在本地准备数据后运行同一训练命令生成。
 
 查看训练指标：
 
@@ -147,7 +143,7 @@ cat -Raw -Encoding UTF8 backend\models\posture_svm.metrics.json
 查看全部训练参数：
 
 ```powershell
-python backend\algorithms\posture_svm\train_svm.py --help
+python train\posture_svm\train_svm.py --help
 ```
 
 ### 3. 使用命令行推理

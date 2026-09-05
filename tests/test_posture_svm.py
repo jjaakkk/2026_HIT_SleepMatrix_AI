@@ -21,12 +21,12 @@ from backend.algorithms.posture_svm.features import (
     extract_frame_features,
 )
 from backend.algorithms.posture_svm.inference import PostureSVMClassifier
-from backend.algorithms.posture_svm.train_svm import split_by_subject
+from train.posture_svm.train_svm import split_by_subject
 from backend.data_utils.data_loader import PostureDataset
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TRAIN_SCRIPT = PROJECT_ROOT / "backend" / "algorithms" / "posture_svm" / "train_svm.py"
+TRAIN_SCRIPT = PROJECT_ROOT / "train" / "posture_svm" / "train_svm.py"
 INFERENCE_SCRIPT = (
     PROJECT_ROOT / "backend" / "algorithms" / "posture_svm" / "inference.py"
 )

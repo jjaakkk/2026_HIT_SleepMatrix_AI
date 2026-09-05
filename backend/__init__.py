@@ -1,1 +1,1 @@
-"""SleepMatrix backend package."""
+"""SleepMatrix AI backend package."""

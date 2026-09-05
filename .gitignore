@@ -1,10 +1,17 @@
-.venv/
-.vscode/
+/*
+
+!.gitignore
+!README.md
+!requirements.txt
+!/backend
+!/shared
+!/docs
+!/frontend
+!/tests
+!/dataset
+dataset/*
+!dataset/README.md
+
+# Python-generated files
 __pycache__/
 *.py[cod]
-
-# The official dataset is large and remains local.
-dataset/
-
-# Generated weak-pressure figures are reproducible local outputs.
-/weak_pressure_*.png

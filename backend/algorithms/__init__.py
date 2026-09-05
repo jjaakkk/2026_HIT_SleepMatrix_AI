@@ -1,1 +1,1 @@
-"""Algorithm modules used by the SleepMatrix backend."""
+"""Algorithm implementations used by the backend service."""

@@ -1,1 +1,1 @@
-"""Automated tests for SleepMatrix."""
+"""SleepMatrix backend tests."""

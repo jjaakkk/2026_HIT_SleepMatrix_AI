@@ -3,3 +3,6 @@ dist
 *.local
 .DS_Store
 *.log
+
+# UI 验证截图（生成物，不入库）
+_screenshots/

@@ -52,10 +52,16 @@ const browser = await puppeteer.launch({ headless: 'shell' });
 try {
   const page = await browser.newPage();
   const consoleErrors: string[] = [];
+  /** /api 探针失败数（后端未启动时的预期降级行为，不计入控制台错误） */
+  let apiProbeFailures = 0;
   page.on('console', (msg) => {
     if (msg.type() === 'error') consoleErrors.push(msg.text());
   });
   page.on('pageerror', (err) => consoleErrors.push('PAGEERROR: ' + String(err)));
+  page.on('response', (res) => {
+    const url = res.url();
+    if (url.includes('/api/') && res.status() >= 400) apiProbeFailures += 1;
+  });
 
   for (const [w, h, tag] of [
     [1920, 1080, '1920×1080'],
@@ -316,7 +322,34 @@ try {
   const kbPerson = await page.evaluate(() => document.querySelector('.col-left .trigger .val')?.textContent?.trim());
   check('下拉键盘导航（↓↓+Enter 切换）', kbPerson === 'wzh · 167 cm / 66 kg', String(kbPerson));
 
-  check('控制台无错误', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+  // ---- 架构对齐检查（后端离线态） ----
+  const algoBadges = await page.evaluate(() =>
+    [...document.querySelectorAll('.topbar .badge')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim()),
+  );
+  check(
+    '算法服务徽章存在且为未连接态',
+    algoBadges.some((t) => t?.includes('算法服务') && t.includes('未连接')),
+    JSON.stringify(algoBadges),
+  );
+  const svmDisabled = await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.seg button')] as HTMLButtonElement[];
+    const b = btns.find((x) => x.textContent?.includes('SVM 推理'));
+    return b ? b.disabled : null;
+  });
+  check('后端离线时 SVM 推理选项禁用', svmDisabled === true, String(svmDisabled));
+  const weakRenamed = await page.evaluate(() =>
+    [...document.querySelectorAll('.seg button')].some((b) => b.textContent?.includes('弱力可视化')),
+  );
+  check('弱力可视化命名（与后端算法区分）', weakRenamed);
+
+  const unexpectedErrors = consoleErrors.filter(
+    (t) => !t.startsWith('Failed to load resource'),
+  );
+  check(
+    '控制台无错误（豁免后端离线的 /api 探针失败）',
+    unexpectedErrors.length === 0 && consoleErrors.length <= apiProbeFailures,
+    `api探针失败 ${apiProbeFailures} 次 · 控制台错误 ${consoleErrors.length} 条：${consoleErrors.slice(0, 3).join(' | ')}`,
+  );
 } finally {
   await browser.close();
 }

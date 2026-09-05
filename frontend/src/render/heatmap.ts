@@ -13,7 +13,11 @@ export interface HeatmapOptions {
   height: number;
 }
 
-/** 压扩指数：标准 0.6，弱力增强 0.35（放大躯干弱压力区域，呼应弱力组课题） */
+/**
+ * 压扩指数（可视化口径）：标准 0.6，弱力可视化 0.35（放大躯干弱压力区域），网格 1.0。
+ * 注意：这是前端渲染层压扩，与后端 weak_area_enhance 算法（backend/algorithms/weak_area_enhance）
+ * 的像素级区域增强是两个不同层面的能力，UI 文案已区分命名。
+ */
 export const GAMMA: Record<HeatmapMode, number> = {
   smooth: 0.6,
   weak: 0.35,

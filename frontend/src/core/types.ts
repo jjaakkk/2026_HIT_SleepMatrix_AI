@@ -1,39 +1,31 @@
 // 核心类型与常量：44×24 压力矩阵（新版数据，勿与旧版 40×26 混淆）
+//
+// 睡姿 ID / 动作映射 / 镜像关系一律取自共享数据契约
+// （shared/contracts/posture.json，前端消费端见 core/contracts.ts），
+// 本文件不再硬编码映射表 —— 与后端 dev/arch 架构对齐。
+import { sleepPosNames, actionToLabelId, mirrorAction as contractMirrorAction } from './contracts.ts';
+
 export const ROWS = 44; // 行 = 人体纵轴，行 0 = 头端，行 43 = 脚端
 export const COLS = 24; // 列 = 人体横轴，列 12 = 中线
 export const CELLS = ROWS * COLS; // 1056
 
 export type SleepPos = 0 | 1 | 2 | 3;
 
-export const SLEEP_POS_NAMES: Record<number, string> = {
-  0: '仰卧',
-  1: '俯卧',
-  2: '左侧卧',
-  3: '右侧卧',
-} as const;
+/** 睡姿 label id → 中文名（由契约文档驱动） */
+export const SLEEP_POS_NAMES: Record<number, string> = sleepPosNames();
 
 /**
- * action(1-21) → sleep_pos
- * 1-6 仰卧；7-9 俯卧（每动作帧数为 2 倍）；10-15 左侧卧；16-21 右侧卧
- * 依据：docx + 飞书数据集说明，已对 14400 条记录全量核验。
+ * action(1-21) → sleep_pos（由契约文档驱动）
+ * 契约 excluded_actions：0 = 空载、22 = 动态序列，两者返回 null。
  */
 export function actionToSleepPos(action: number): SleepPos | null {
-  if (action >= 1 && action <= 6) return 0;
-  if (action >= 7 && action <= 9) return 1;
-  if (action >= 10 && action <= 15) return 2;
-  if (action >= 16 && action <= 21) return 3;
-  return null;
+  const id = actionToLabelId(action);
+  return id !== null && id >= 0 && id <= 3 ? (id as SleepPos) : null;
 }
 
-/**
- * 侧卧镜像动作对：10↔16, 11↔17, 12↔18, 13↔19, 14↔20, 15↔21。
- * 动作 N 的左右镜像帧追加在其镜像动作的文件末尾（飞书说明，已实测）。
- * 仰卧/俯卧的镜像帧追加在自身文件后半，故返回 null。
- */
+/** 侧卧镜像动作对（由契约 mirrored_action_pairs 驱动）；仰卧/俯卧返回 null */
 export function mirrorAction(action: number): number | null {
-  if (action >= 10 && action <= 15) return action + 6;
-  if (action >= 16 && action <= 21) return action - 6;
-  return null;
+  return contractMirrorAction(action);
 }
 
 /** 俯卧动作（7-9）每动作 30 帧（其余 15 帧） */

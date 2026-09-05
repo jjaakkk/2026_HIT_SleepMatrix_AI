@@ -14,6 +14,11 @@ defineProps<{
   durationFrames: number;
   poseNote?: string;
   playing: boolean;
+  /** 睡姿判定来源 */
+  poseSource?: 'label' | 'inference';
+  /** 推理置信度 0-1 */
+  confidence?: number | null;
+  predicting?: boolean;
   metrics: FrameMetrics | null;
   history: FrameMetrics[];
   regionStats: RegionMetrics[];
@@ -35,6 +40,9 @@ const emit = defineEmits<{ 'select-region': [index: number] }>();
           :fps="10"
           :note="poseNote"
           :live="playing"
+          :source="poseSource"
+          :confidence="confidence"
+          :predicting="predicting"
         />
       </section>
 

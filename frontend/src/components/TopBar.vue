@@ -12,6 +12,12 @@ const props = defineProps<{
   playing: boolean;
   /** 使用内置模拟数据 */
   simulated: boolean;
+  /** 后端服务状态 */
+  backendState: 'checking' | 'online' | 'offline';
+  /** SVM 模型是否可用 */
+  modelAvailable: boolean;
+  /** 远端契约与前端基线版本不一致 */
+  contractMismatch: boolean;
 }>();
 
 const { theme, toggle } = useTheme();
@@ -61,6 +67,30 @@ function clockText(): string {
         {{ playing ? '正在回放' : '数据回放 · 历史记录' }}
       </UiBadge>
       <UiBadge v-if="simulated" variant="warning">演示模式 · 内置数据</UiBadge>
+      <UiBadge
+        v-if="contractMismatch"
+        variant="danger"
+        title="后端契约版本与前端基线不一致，已保持本地映射"
+        >契约版本不一致</UiBadge
+      >
+      <UiBadge
+        v-else-if="backendState === 'online'"
+        :variant="modelAvailable ? 'success' : 'warning'"
+        :title="modelAvailable ? '算法服务已连接 · SVM 模型就绪' : '算法服务已连接 · 模型文件缺失（可离线回放）'"
+        >算法服务 · 已连接</UiBadge
+      >
+      <UiBadge
+        v-else-if="backendState === 'offline'"
+        variant="neutral"
+        title="后端未连接 · 睡姿以记录标签为准（SVM 推理不可用）"
+        >算法服务 · 未连接</UiBadge
+      >
+      <UiBadge
+        v-else
+        variant="neutral"
+        title="检测后端 /api/health …"
+        >算法服务 · 检测中</UiBadge
+      >
       <UiBadge variant="warning">气囊 · 模拟信号</UiBadge>
     </div>
 

@@ -17,6 +17,7 @@ import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stat
 import { PlaybackController } from './core/playback.ts';
 import { SimulatedAirbagSource } from './core/airbag.ts';
 import { generateSimulatedDataset } from './core/simulate.ts';
+import { usePostureInference } from './composables/usePostureInference.ts';
 
 const data = ref<DemoData | null>(null);
 /** 数据模式：demo = 真实记录子集；simulated = 内置演示数据 */
@@ -183,6 +184,26 @@ const selectedRegion = ref<number | null>(null);
 // 气囊模拟源（真实设备就绪后换成实现同一接口的适配器）
 const airbagSource = new SimulatedAirbagSource();
 
+// 睡姿推理（架构：通过 HTTP API 获取算法结果；离线时回退记录标签）
+const inference = usePostureInference();
+const displayPose = computed(() => {
+  if (inference.poseSource.value === 'inference' && inference.prediction.value) {
+    return inference.prediction.value.label_zh;
+  }
+  return sleepPosName.value;
+});
+const poseNote = computed(() => {
+  if (inference.poseSource.value === 'inference') {
+    if (inference.backend.value === 'online') return 'SVM 逐帧推理 · POST /api/posture/predict';
+    return '后端离线 · 已回退记录标签';
+  }
+  return sourceType.value === 'dynamic'
+    ? '翻身过程 · 未使用文件内标签'
+    : currentAction.value?.action === 0
+      ? '空载记录 · 判定为离床'
+      : undefined;
+});
+
 function onAirbagPreset(name: string) {
   if (name === '腰部支撑增强') {
     showRegions.value = true;
@@ -293,6 +314,7 @@ function applyHash() {
     if (!Number.isNaN(f)) controller.value?.seek(f);
   }
   if (h.get('autoplay') === '1') controller.value?.play();
+  if (h.get('pose') === 'svm') inference.setPoseSource('inference');
 }
 
 const legendTicks = computed<number[] | null>(() => {
@@ -312,6 +334,7 @@ const scaleWarning = computed(() =>
 
 onMounted(async () => {
   window.addEventListener('resize', () => (viewportH.value = window.innerHeight));
+  void inference.probe();
   await loadData();
   if (person.value) {
     const i = person.value.actions.findIndex((a) => a.action !== 0);
@@ -324,11 +347,23 @@ watch(() => frameCount.value, (n) => {
   if (frameIdx.value >= n) frameIdx.value = n - 1;
 });
 watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
+
+// 推理触发：帧号 / 来源 / 后端状态变化时队列化当前帧（组合式函数内部节流 + latest-wins）
+watch(
+  [frameIdx, () => inference.poseSource.value, () => inference.backend.value],
+  () => inference.queueInference(currentFrame.value),
+);
 </script>
 
 <template>
   <div class="shell">
-    <TopBar :playing="playing" :simulated="dataSource === 'simulated'" />
+    <TopBar
+      :playing="playing"
+      :simulated="dataSource === 'simulated'"
+      :backend-state="inference.backend.value"
+      :model-available="inference.modelAvailable.value"
+      :contract-mismatch="inference.contractMismatch.value"
+    />
 
     <Transition name="page" mode="out-in">
       <div v-if="data" key="app" class="stage">
@@ -347,6 +382,8 @@ watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
               :show-spine="showSpine"
               :show-calf="showCalf"
               :show-dyn-labels="showDynLabels"
+              :pose-source="inference.poseSource.value"
+              :backend-online="inference.backend.value === 'online'"
               @update:data-source="selectDataSource"
               @update:source-type="selectSource"
               @update:person-idx="selectPerson"
@@ -357,6 +394,7 @@ watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
               @update:show-spine="showSpine = $event"
               @update:show-calf="showCalf = $event"
               @update:show-dyn-labels="showDynLabels = $event"
+              @update:pose-source="inference.setPoseSource($event)"
             />
           </aside>
 
@@ -392,16 +430,13 @@ watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
 
           <aside class="col-right">
             <InsightPanel
-              :pose="sleepPosName"
+              :pose="displayPose"
               :duration-frames="poseDurationFrames"
-              :pose-note="
-                sourceType === 'dynamic'
-                  ? '翻身过程 · 未使用文件内标签'
-                  : currentAction?.action === 0
-                    ? '空载记录 · 判定为离床'
-                    : undefined
-              "
+              :pose-note="poseNote"
               :playing="playing"
+              :pose-source="inference.poseSource.value"
+              :confidence="inference.prediction.value?.confidence ?? null"
+              :predicting="inference.predicting.value"
               :metrics="metrics"
               :history="history"
               :region-stats="regionStats"

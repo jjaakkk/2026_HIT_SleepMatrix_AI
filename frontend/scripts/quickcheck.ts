@@ -7,10 +7,9 @@ import { parseDatasetJson, buildPlaybackList } from '../src/core/parsers/json.ts
 import { parseRegion, parseSpine } from '../src/core/parsers/annotations.ts';
 import { computeMetrics, meanBackground, contactIndex, mirrorFrame } from '../src/core/metrics.ts';
 import { actionToSleepPos, SLEEP_POS_NAMES } from '../src/core/types.ts';
+import { dataRoot } from './paths.ts';
 
-const root =
-  process.env.SLEEP_DATA_ROOT ??
-  path.resolve(process.cwd(), '../睡姿 区域划分data/睡姿 区域划分data');
+const root = dataRoot();
 const load = (rel: string) => fs.readFileSync(path.join(root, rel), 'utf8');
 
 console.log('=== 智能床垫 Phase 1 数据读取自检 ===\n');

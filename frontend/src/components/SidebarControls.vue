@@ -25,6 +25,10 @@ const props = defineProps<{
   showSpine: boolean;
   showCalf: boolean;
   showDynLabels: boolean;
+  /** 睡姿判定来源：记录标签 / 后端推理 */
+  poseSource: 'label' | 'inference';
+  /** 后端服务是否在线（离线时禁用 SVM 推理选项） */
+  backendOnline: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -38,6 +42,7 @@ const emit = defineEmits<{
   'update:showSpine': [v: boolean];
   'update:showCalf': [v: boolean];
   'update:showDynLabels': [v: boolean];
+  'update:poseSource': [v: 'label' | 'inference'];
 }>();
 
 function actionLabel(a: DemoAction): string {
@@ -66,7 +71,7 @@ const sourceOptions = [
 ];
 const modeOptions: { value: HeatmapMode; label: string; title?: string }[] = [
   { value: 'smooth', label: '标准', title: '标准压扩曲线' },
-  { value: 'weak', label: '弱力增强', title: '放大躯干弱压力区域' },
+  { value: 'weak', label: '弱力可视化', title: '渲染压扩 γ=0.35，突出弱压力区域（可视化口径，非后端增强算法）' },
   { value: 'grid', label: '原始网格', title: '逐格原始读数' },
 ];
 const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
@@ -74,6 +79,17 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
   { value: 'auto', label: '自动', title: '按当前帧峰值自适应' },
   { value: 'fixed500', label: '0–500', title: '固定量程 0–500' },
 ];
+const poseSourceOptions = computed(() => [
+  { value: 'label', label: '记录标签', title: '使用记录内睡姿标签（离线可用）' },
+  {
+    value: 'inference',
+    label: 'SVM 推理',
+    disabled: !props.backendOnline,
+    title: props.backendOnline
+      ? '调用后端 /api/posture/predict 逐帧推理'
+      : '后端未连接，SVM 推理不可用',
+  },
+]);
 </script>
 
 <template>
@@ -122,6 +138,21 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
         />
       </section>
     </template>
+
+    <section class="group">
+      <h4 class="group-title"><Icon name="body" :size="11" />睡姿识别</h4>
+      <UiSegmented
+        :model-value="poseSource"
+        :options="poseSourceOptions"
+        size="sm"
+        aria-label="睡姿判定来源"
+        @update:model-value="emit('update:poseSource', $event as 'label' | 'inference')"
+      />
+      <p class="foot">
+        <template v-if="poseSource === 'inference'">后端逐帧推理 · 结果与置信度来自算法服务</template>
+        <template v-else>记录内标签 · 离线可用；接后端后可选 SVM 推理</template>
+      </p>
+    </section>
 
     <section class="group">
       <h4 class="group-title"><Icon name="layers" :size="11" />渲染</h4>
@@ -254,5 +285,11 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
   font-size: var(--fs-2xs);
   color: var(--text-3);
   white-space: nowrap;
+}
+.foot {
+  font-size: 10.5px;
+  color: var(--text-3);
+  line-height: 1.5;
+  padding: 0 2px;
 }
 </style>

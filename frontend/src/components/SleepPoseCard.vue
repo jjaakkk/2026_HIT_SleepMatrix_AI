@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 
 const props = defineProps<{
-  /** 状态名：仰卧/俯卧/左侧卧/右侧卧/离床·无人/在床/动态过程 */
+  /** 状态名：仰卧/俯卧/左侧卧/右侧卧/离床·无人/在床/动态过程/推理标签 */
   pose: string;
   /** 持续帧数 */
   durationFrames: number;
@@ -11,6 +11,12 @@ const props = defineProps<{
   note?: string;
   /** 回放进行中（呼吸指示点） */
   live?: boolean;
+  /** 睡姿判定来源 */
+  source?: 'label' | 'inference';
+  /** 推理置信度 0-1（仅 source=inference 时展示） */
+  confidence?: number | null;
+  /** 推理请求进行中 */
+  predicting?: boolean;
 }>();
 
 const POSE_COLORS: Record<string, string> = {
@@ -27,6 +33,9 @@ const POSE_COLORS: Record<string, string> = {
 const color = computed(() => POSE_COLORS[props.pose] ?? '#8b8f98');
 const seconds = computed(() => (props.durationFrames / props.fps).toFixed(1));
 const isEmpty = computed(() => props.pose === '离床' || props.pose === '离床 · 无人');
+const confidencePct = computed(() =>
+  props.confidence != null ? Math.round(Math.min(Math.max(props.confidence, 0), 1) * 100) : null,
+);
 </script>
 
 <template>
@@ -79,9 +88,24 @@ const isEmpty = computed(() => props.pose === '离床' || props.pose === '离床
       <div class="name-row">
         <span class="pose-name">{{ pose }}</span>
         <span v-if="live && !isEmpty" class="live-dot" title="监测中" aria-hidden="true" />
+        <span v-if="source === 'inference'" class="src-badge" :class="{ busy: predicting && confidencePct === null }">
+          {{ predicting && confidencePct === null ? '推理中' : 'SVM 推理' }}
+        </span>
       </div>
       <div class="duration num">
         持续 {{ durationFrames }} 帧 · {{ seconds }} 秒
+      </div>
+      <div v-if="source === 'inference'" class="conf-row">
+        <span class="conf-track" aria-hidden="true">
+          <span
+            class="conf-fill"
+            :style="{ width: (confidencePct ?? 0) + '%' }"
+            :class="{ busy: predicting && confidencePct === null }"
+          />
+        </span>
+        <span class="conf-val num">
+          {{ confidencePct !== null ? `置信度 ${confidencePct}%` : '等待结果…' }}
+        </span>
       </div>
       <div v-if="note" class="note">{{ note }}</div>
     </div>
@@ -165,6 +189,76 @@ const isEmpty = computed(() => props.pose === '离床' || props.pose === '离床
   color: var(--text-2);
   margin-top: 2px;
 }
+.src-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-strong);
+  border-radius: var(--r-pill);
+  padding: 1px 7px;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.src-badge.busy {
+  color: var(--text-3);
+  background: var(--surface-3);
+  border-color: var(--border);
+  animation: busy-breathe 1.6s var(--ease-in-out) infinite;
+}
+@keyframes busy-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.conf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+}
+.conf-track {
+  flex: 1;
+  max-width: 84px;
+  height: 4px;
+  background: var(--surface-3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.conf-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.conf-fill.busy {
+  animation: conf-indeterminate 1.2s var(--ease-in-out) infinite;
+}
+@keyframes conf-indeterminate {
+  0% {
+    width: 12%;
+    margin-left: 0;
+  }
+  50% {
+    width: 46%;
+  }
+  100% {
+    width: 12%;
+    margin-left: 88%;
+  }
+}
+.conf-val {
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
 .note {
   font-size: var(--fs-2xs);
   color: var(--text-3);
@@ -172,7 +266,9 @@ const isEmpty = computed(() => props.pose === '离床' || props.pose === '离床
   line-height: 1.45;
 }
 @media (prefers-reduced-motion: reduce) {
-  .live-dot {
+  .live-dot,
+  .src-badge.busy,
+  .conf-fill.busy {
     animation: none;
   }
 }

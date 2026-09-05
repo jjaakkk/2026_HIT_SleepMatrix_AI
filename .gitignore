@@ -1,8 +1,26 @@
-node_modules
-dist
-*.local
-.DS_Store
-*.log
+/*
+!.gitignore
+!README.md
+!requirements.txt
+!/backend
+!/shared
+!/docs
+!/frontend
+!/tests
+!/dataset
+dataset/*
+!dataset/README.md
 
-# UI ÑéÖ¤½ØÍ¼£¨Éú³ÉÎï£¬²»Èë¿â£©
+# Python-generated files
+__pycache__/
+*.py[cod]
+
+# frontend ç”Ÿæˆç‰©ï¼ˆViteï¼‰
+frontend/node_modules
+frontend/dist
+frontend/*.local
+frontend/.DS_Store
+frontend/*.log
+
+# UI éªŒè¯æˆªå›¾ï¼ˆç”Ÿæˆç‰©ï¼Œä¸å…¥åº“ï¼›è¾“å‡ºäºä»“åº“æ ¹ _screenshots/ï¼‰
 _screenshots/

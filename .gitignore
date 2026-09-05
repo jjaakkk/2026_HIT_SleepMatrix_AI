@@ -8,9 +8,9 @@
 !/frontend
 !/tests
 !/train
-
-# Generated model artifacts
-/backend/models/
+!/dataset
+dataset/*
+!dataset/README.md
 
 # Python-generated files
 __pycache__/

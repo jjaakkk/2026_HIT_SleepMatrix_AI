@@ -1,0 +1,367 @@
+{
+  "split": "subject",
+  "model_path": "H:\\Projects\\2026_HIT_SleepMatrix_AI\\backend\\models\\body_partition_holdout.pth",
+  "metrics": {
+    "pixel_accuracy": 0.915546743476431,
+    "mean_iou": 0.725663877927043,
+    "iou_per_class": {
+      "background": 0.922047429118558,
+      "shoulder": 0.6196287443522326,
+      "back": 0.6948670704898069,
+      "waist": 0.6794263789666897,
+      "hip": 0.7417158180802046,
+      "thigh": 0.6962978265547665
+    },
+    "mean_rect_iou": 0.7003199112342768,
+    "mean_boundary_mae": 0.8161805555555555,
+    "pixel_accuracy_by_position": {
+      "supine": 0.9301329264870931,
+      "prone": 0.9171156004489338,
+      "left_lateral": 0.9041017817059483,
+      "right_lateral": 0.9108366652637486
+    },
+    "per_subject": {
+      "SAI": {
+        "pixel_accuracy": 0.9053872053872054,
+        "mean_iou": 0.7189591371429455,
+        "frames": 720
+      },
+      "dgs": {
+        "pixel_accuracy": 0.9273621632996633,
+        "mean_iou": 0.7699057795269307,
+        "frames": 720
+      },
+      "hyh": {
+        "pixel_accuracy": 0.9214357112794613,
+        "mean_iou": 0.7467153648637145,
+        "frames": 720
+      },
+      "ltr": {
+        "pixel_accuracy": 0.9029974221380471,
+        "mean_iou": 0.6680333900365788,
+        "frames": 720
+      },
+      "whc": {
+        "pixel_accuracy": 0.9190643413299663,
+        "mean_iou": 0.7523412172704805,
+        "frames": 720
+      },
+      "wzh": {
+        "pixel_accuracy": 0.9170336174242424,
+        "mean_iou": 0.7026206661871935,
+        "frames": 720
+      }
+    }
+  },
+  "training": {
+    "split": "subject",
+    "test_size": 0.3,
+    "random_state": 42,
+    "epochs_ran": 10,
+    "batch_size": 256,
+    "learning_rate": 0.003,
+    "augmentation": {
+      "copies": 2,
+      "max_row_shift": 2,
+      "max_column_shift": 1,
+      "noise_ratio": 0.03,
+      "gain_range": [
+        0.9,
+        1.1
+      ],
+      "baseline_ratio": 0.02,
+      "dead_pixel_ratio": 0.0005,
+      "horizontal_mirror": false
+    },
+    "parameters": 265710,
+    "train_frames": 10080,
+    "augmented_train_frames": 30240,
+    "test_frames": 4320,
+    "train_subjects": [
+      "gjh",
+      "gzy",
+      "hpy",
+      "jhy",
+      "ljy",
+      "lyp",
+      "sbr",
+      "stanl",
+      "syz",
+      "tjs",
+      "wcy",
+      "wjy",
+      "yl",
+      "zhr"
+    ],
+    "test_subjects": [
+      "SAI",
+      "dgs",
+      "hyh",
+      "ltr",
+      "whc",
+      "wzh"
+    ]
+  },
+  "history": [
+    {
+      "epoch": 1.0,
+      "train_loss": 0.40116599976385714,
+      "val_pixel_accuracy": 0.9088646885521886,
+      "seconds": 53.525633299999754
+    },
+    {
+      "epoch": 2.0,
+      "train_loss": 0.13581024974426895,
+      "val_pixel_accuracy": 0.9074131067620651,
+      "seconds": 59.60314619999917
+    },
+    {
+      "epoch": 3.0,
+      "train_loss": 0.08716785731927428,
+      "val_pixel_accuracy": 0.9074874175785634,
+      "seconds": 55.981104999998934
+    },
+    {
+      "epoch": 4.0,
+      "train_loss": 0.06808907540623473,
+      "val_pixel_accuracy": 0.915546743476431,
+      "seconds": 56.03015950000008
+    },
+    {
+      "epoch": 5.0,
+      "train_loss": 0.045610097097972084,
+      "val_pixel_accuracy": 0.9136429398148148,
+      "seconds": 57.11222549999911
+    },
+    {
+      "epoch": 6.0,
+      "train_loss": 0.04317391353348891,
+      "val_pixel_accuracy": 0.9132959367985409,
+      "seconds": 58.58567430000039
+    },
+    {
+      "epoch": 7.0,
+      "train_loss": 0.026279598348355165,
+      "val_pixel_accuracy": 0.9148354201739618,
+      "seconds": 61.39327679999951
+    },
+    {
+      "epoch": 8.0,
+      "train_loss": 0.028155864505146545,
+      "val_pixel_accuracy": 0.9141563201459035,
+      "seconds": 56.976467800001046
+    },
+    {
+      "epoch": 9.0,
+      "train_loss": 0.016774839785679306,
+      "val_pixel_accuracy": 0.9148845223063973,
+      "seconds": 56.624894000000495
+    },
+    {
+      "epoch": 10.0,
+      "train_loss": 0.014026369286513834,
+      "val_pixel_accuracy": 0.91536502174523,
+      "seconds": 53.96706190000077
+    }
+  ],
+  "summary": {
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "pixel_accuracy_mean": 0.918997702721661,
+    "pixel_accuracy_std": 0.003619182301283082,
+    "mean_iou_mean": 0.7314877546919578,
+    "mean_iou_std": 0.009562327893927577,
+    "pixel_accuracy": 0.918997702721661,
+    "mean_iou": 0.7314877546919578,
+    "test_subjects": [
+      [
+        "SAI",
+        "dgs",
+        "hyh",
+        "ltr",
+        "whc",
+        "wzh"
+      ],
+      [
+        "hyh",
+        "jhy",
+        "ltr",
+        "lyp",
+        "wcy",
+        "zhr"
+      ],
+      [
+        "gjh",
+        "hyh",
+        "lyp",
+        "stanl",
+        "wcy",
+        "whc"
+      ]
+    ]
+  },
+  "runs": [
+    {
+      "seed": 42,
+      "pixel_accuracy": 0.915546743476431,
+      "mean_iou": 0.725663877927043,
+      "mean_rect_iou": 0.7003199112342768,
+      "mean_boundary_mae": 0.8161805555555555,
+      "pixel_accuracy_by_position": {
+        "supine": 0.9301329264870931,
+        "prone": 0.9171156004489338,
+        "left_lateral": 0.9041017817059483,
+        "right_lateral": 0.9108366652637486
+      },
+      "test_subjects": [
+        "SAI",
+        "dgs",
+        "hyh",
+        "ltr",
+        "whc",
+        "wzh"
+      ],
+      "per_subject": {
+        "SAI": {
+          "pixel_accuracy": 0.9053872053872054,
+          "mean_iou": 0.7189591371429455,
+          "frames": 720
+        },
+        "dgs": {
+          "pixel_accuracy": 0.9273621632996633,
+          "mean_iou": 0.7699057795269307,
+          "frames": 720
+        },
+        "hyh": {
+          "pixel_accuracy": 0.9214357112794613,
+          "mean_iou": 0.7467153648637145,
+          "frames": 720
+        },
+        "ltr": {
+          "pixel_accuracy": 0.9029974221380471,
+          "mean_iou": 0.6680333900365788,
+          "frames": 720
+        },
+        "whc": {
+          "pixel_accuracy": 0.9190643413299663,
+          "mean_iou": 0.7523412172704805,
+          "frames": 720
+        },
+        "wzh": {
+          "pixel_accuracy": 0.9170336174242424,
+          "mean_iou": 0.7026206661871935,
+          "frames": 720
+        }
+      }
+    },
+    {
+      "seed": 43,
+      "pixel_accuracy": 0.9174496703142536,
+      "mean_iou": 0.7238299713800284,
+      "mean_rect_iou": 0.702100264899028,
+      "mean_boundary_mae": 0.8103472222222222,
+      "pixel_accuracy_by_position": {
+        "supine": 0.926328388047138,
+        "prone": 0.9121308571829405,
+        "left_lateral": 0.9169428661616161,
+        "right_lateral": 0.9143965698653199
+      },
+      "test_subjects": [
+        "hyh",
+        "jhy",
+        "ltr",
+        "lyp",
+        "wcy",
+        "zhr"
+      ],
+      "per_subject": {
+        "hyh": {
+          "pixel_accuracy": 0.9201428345959596,
+          "mean_iou": 0.7438975984234188,
+          "frames": 720
+        },
+        "jhy": {
+          "pixel_accuracy": 0.9206781355218855,
+          "mean_iou": 0.7304735243986893,
+          "frames": 720
+        },
+        "ltr": {
+          "pixel_accuracy": 0.8994870580808081,
+          "mean_iou": 0.6627995716705737,
+          "frames": 720
+        },
+        "lyp": {
+          "pixel_accuracy": 0.9159814288720539,
+          "mean_iou": 0.7373127724998735,
+          "frames": 720
+        },
+        "wcy": {
+          "pixel_accuracy": 0.9162405303030303,
+          "mean_iou": 0.7149672457908328,
+          "frames": 720
+        },
+        "zhr": {
+          "pixel_accuracy": 0.9321680345117845,
+          "mean_iou": 0.7567863006147868,
+          "frames": 720
+        }
+      }
+    },
+    {
+      "seed": 44,
+      "pixel_accuracy": 0.9239966943742985,
+      "mean_iou": 0.7449694147688021,
+      "mean_rect_iou": 0.7185322813611896,
+      "mean_boundary_mae": 0.7460416666666667,
+      "pixel_accuracy_by_position": {
+        "supine": 0.93056169332211,
+        "prone": 0.9284941428170594,
+        "left_lateral": 0.919347117003367,
+        "right_lateral": 0.9175838243546577
+      },
+      "test_subjects": [
+        "gjh",
+        "hyh",
+        "lyp",
+        "stanl",
+        "wcy",
+        "whc"
+      ],
+      "per_subject": {
+        "gjh": {
+          "pixel_accuracy": 0.9371738215488216,
+          "mean_iou": 0.7645758137588873,
+          "frames": 720
+        },
+        "hyh": {
+          "pixel_accuracy": 0.9216474642255892,
+          "mean_iou": 0.7514307610968275,
+          "frames": 720
+        },
+        "lyp": {
+          "pixel_accuracy": 0.9140361952861953,
+          "mean_iou": 0.7371282130259263,
+          "frames": 720
+        },
+        "stanl": {
+          "pixel_accuracy": 0.9256036931818182,
+          "mean_iou": 0.739509586336891,
+          "frames": 720
+        },
+        "wcy": {
+          "pixel_accuracy": 0.92020070496633,
+          "mean_iou": 0.7187058114814553,
+          "frames": 720
+        },
+        "whc": {
+          "pixel_accuracy": 0.925318287037037,
+          "mean_iou": 0.7629117280385663,
+          "frames": 720
+        }
+      }
+    }
+  ]
+}

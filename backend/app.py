@@ -11,6 +11,7 @@ from flask_cors import CORS
 import numpy as np
 
 from backend import config
+from backend.algorithms.body_partition.api import create_blueprint
 from backend.algorithms.posture_svm.inference import PostureSVMClassifier
 from backend.data_utils.contracts import CONTRACT
 from backend.data_utils.pressure_processing import validate_pressure_frame
@@ -50,6 +51,7 @@ def create_app(model_path: str | Path | None = None) -> Flask:
     CORS(app)
     classifier = LazyPostureClassifier(model_path or config.POSTURE_SVM_MODEL_PATH)
     app.extensions["posture_svm_classifier"] = classifier
+    app.register_blueprint(create_blueprint())
 
     @app.get("/api/health")
     def health() -> tuple[Any, int]:

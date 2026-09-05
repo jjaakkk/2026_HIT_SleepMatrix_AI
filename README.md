@@ -48,15 +48,30 @@ SleepMatrix_AI/
 │   │   │   ├── train_cnn.py
 │   │   │   └── inference.py
 │   │   │
-│   │   ├── body_partition/                # 【成员 C】身体部位划分
-│   │   │   ├── partition.py
-│   │   │   └── utils.py
+│   │   ├── body_partition/                # 【成员 C】身体部位划分（已实现）
+│   │   │   ├── model_define.py            # 轻量 U-Net 六类分割网络（训练/推理共用）
+│   │   │   ├── partition.py               # region 标注解析、矩形↔掩码互转、指标
+│   │   │   ├── preprocess.py              # 逐帧 99 分位归一化
+│   │   │   ├── demo_data.py               # 标注数据集懒加载（供展示 API 浏览）
+│   │   │   ├── inference.py               # 分割推理接口
+│   │   │   └── README.md
 │   │   │
 │   │   └── weak_area_enhance/             # 【成员 D】弱压力区域增强
 │   │       ├── enhance.py
 │   │       └── compare.py
 │   │
-│   └── models/                            # 本地训练产物；整个目录不提交 Git
+│   └── models/                            # 训练产物；按算法命名，代码中不硬编码多份副本
+│       ├── posture_svm.joblib
+│       ├── posture_cnn.pth
+│       └── body_partition.pth             # 成员 C 分割模型（+ .metrics.json）
+│
+├── train/                                 # 训练代码根目录；各算法一个子包
+│   ├── README.md
+│   └── body_partition/                    # 【成员 C】身体部位划分训练
+│       ├── dataset_prep.py                # 标注 JSON -> 帧/掩码数组
+│       ├── augment.py                     # 帧-掩码联合增强（不做翻转）
+│       ├── train_partition.py             # 70/30 随机划分与留人法两种训练协议
+│       └── visualize.py                   # 报告用对比图与训练曲线
 │
 ├── frontend/                              # 【成员 E】只通过共享契约和 HTTP API 获取数据
 │   ├── index.html
@@ -68,7 +83,9 @@ SleepMatrix_AI/
 │   │   ├── heatmap.js
 │   │   ├── dashboard.js
 │   │   └── airbag_anim.js
-│   └── assets/
+│   ├── assets/
+│   └── body-partition/                    # 【成员 C】区域划分展示页（/body-partition/）
+│       └── index.html                     # 自包含页面：睡姿切换、逐帧浏览、预测/真值叠加
 │
 ├── dataset/                               # 本地数据集；整个目录不提交 Git
 │
@@ -79,7 +96,7 @@ SleepMatrix_AI/
 │
 ├── docs/
 │   ├── api/                               # 接口说明与示例
-│   ├── reports/
+│   ├── body-partition/                    # 【成员 C】实验报告与效果图
 │   ├── ai_conversations/
 │   └── references/
 │
@@ -87,9 +104,43 @@ SleepMatrix_AI/
     ├── test_data_utils.py                 # 公共契约、解析和增强测试
     ├── test_pressure_features.py          # 公共压力预处理与特征原语测试
     ├── test_posture_svm.py                # 成员 A 算法测试
+    ├── test_body_partition.py             # 成员 C 标注解析、掩码、指标与增强测试
     └── test_api.py                        # HTTP 集成测试
 ```
 
+## 安装与启动
+
+```powershell
+# 1. 创建虚拟环境并安装依赖（推荐在项目根目录）
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+
+# 2. 放置数据：dataset/raw/ 下放入官方数据文件（见 dataset/README.md）
+
+# 3. 启动后端（默认 http://127.0.0.1:5000）
+.venv\Scripts\python.exe -m backend.app
+```
+
+### 身体部位区域划分（成员 C）
+
+```powershell
+# 训练（可选，模型工件已提交 backend/models/body_partition.pth）
+.venv\Scripts\python.exe -m train.body_partition.dataset_prep
+.venv\Scripts\python.exe -m train.body_partition.train_partition --split random    # 70/30 生产模型
+.venv\Scripts\python.exe -m train.body_partition.train_partition --split subject   # 留人法新用户评估
+
+# 展示页：启动后端后访问
+#   http://127.0.0.1:5000/body-partition/
+```
+
+详见 `train/README.md`、`backend/algorithms/body_partition/README.md`
+与实验报告 `docs/body-partition/body_partition_report.md`。
+
+### 测试
+
+```powershell
+.venv\Scripts\python.exe -m unittest discover -s tests
+```
 ## SVM 睡姿识别：训练与推理
 
 以下命令均在项目根目录执行，适用于 Windows PowerShell。

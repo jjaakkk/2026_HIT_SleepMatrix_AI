@@ -4,36 +4,25 @@
 !README.md
 !requirements.txt
 !/backend
+!/shared
+!/docs
+!/frontend
 !/tests
+!/train
+!/dataset
+dataset/*
+!dataset/README.md
 
-# 本地环境和 Python 生成文件
-.venv/
+# Python-generated files
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.cache/
 
-# 原始数据、训练输出和模型权重不提交
-/睡姿 区域划分data/
-/睡姿 区域划分data.rar
-/dataset/**/*.png
-/outputs/
-/backend/models/*
-!/backend/models/*.metrics.json
-*.pt
-*.pth
+# frontend 生成物（Vite）
+frontend/node_modules
+frontend/dist
+frontend/*.local
+frontend/.DS_Store
+frontend/*.log
 
-# 本地独立版入口与资料（仓库版代码位于 backend/）
-/src/
-/app.py
-/run_pipeline.ps1
-/requirements-dev.txt
-/README.posture-cnn.local.md
-/.streamlit/
-/splits.json
-/专业方向实践.pdf
-/截图*.png
-
-# 编辑器文件
-.idea/
-.vscode/
+# UI 验证截图（生成物，不入库；输出于仓库根 _screenshots/）
+_screenshots/

@@ -110,15 +110,15 @@ smart beds with deep image-based pose estimators*）中以**全卷积网络**直
 ## 6. 复现命令
 
 ```powershell
-.venv\Scripts\python.exe -m train.dataset_prep
-.venv\Scripts\python.exe -m train.train_partition --split random   # 生产模型 + 95% 指标
-.venv\Scripts\python.exe -m train.train_partition --split subject  # 新用户 70% 指标
-.venv\Scripts\python.exe -m train.visualize                        # 本报告中的图
+.venv\Scripts\python.exe -m train.body_partition.dataset_prep
+.venv\Scripts\python.exe -m train.body_partition.train_partition --split random   # 生产模型 + 95% 指标
+.venv\Scripts\python.exe -m train.body_partition.train_partition --split subject  # 新用户 70% 指标
+.venv\Scripts\python.exe -m train.body_partition.visualize                        # 本报告中的图
 ```
 
 产物：
 
 - 模型工件：`backend/models/body_partition.pth`（+ `.metrics.json`）
-- 新用户评估：`docs/reports/body_partition_subject_eval.json`
+- 新用户评估：`docs/body-partition/body_partition_subject_eval.json`
 - 推理接口：`backend/algorithms/body_partition/inference.py`（`BodyPartitionPredictor`）
 - HTTP API：`POST /api/body-partition/predict`、`GET /api/body-partition/sample|catalog|metrics`

@@ -7,7 +7,7 @@ both the random 70/30 split and the held-out-participant evaluation.
 
 Run from the repository root::
 
-    python -m train.dataset_prep
+    python -m train.body_partition.dataset_prep
 """
 
 from __future__ import annotations

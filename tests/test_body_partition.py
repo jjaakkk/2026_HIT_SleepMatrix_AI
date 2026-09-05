@@ -20,7 +20,7 @@ from backend.algorithms.body_partition.partition import (
 )
 from backend.algorithms.body_partition.preprocess import normalize_frames
 from backend.data_utils.contracts import MATRIX_SHAPE
-from train.augment import augment_frames_and_masks
+from train.body_partition.augment import augment_frames_and_masks
 
 
 class RegionParsingTests(unittest.TestCase):

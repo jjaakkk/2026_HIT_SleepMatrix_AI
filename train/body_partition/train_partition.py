@@ -9,9 +9,9 @@ Two evaluation protocols are supported, matching the task requirements:
 
 Only the training partition is augmented. Run from the repository root::
 
-    python -m train.dataset_prep            # once, builds the base arrays
-    python -m train.train_partition --split random
-    python -m train.train_partition --split subject
+    python -m train.body_partition.dataset_prep            # once, builds the base arrays
+    python -m train.body_partition.train_partition --split random
+    python -m train.body_partition.train_partition --split subject
 """
 
 from __future__ import annotations
@@ -42,15 +42,15 @@ from backend.algorithms.body_partition.partition import (
 )
 from backend.algorithms.body_partition.preprocess import normalize_frames
 from backend.data_utils.contracts import CONTRACT_VERSION, MATRIX_SHAPE
-from train.augment import augment_frames_and_masks
-from train.dataset_prep import DEFAULT_SOURCE, build_base_arrays, load_partition_records
+from train.body_partition.augment import augment_frames_and_masks
+from train.body_partition.dataset_prep import DEFAULT_SOURCE, build_base_arrays, load_partition_records
 
 ARTIFACT_FORMAT = "sleepmatrix-body-partition"
 ARTIFACT_VERSION = 1
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "backend" / "models" / "body_partition.pth"
 HOLDOUT_MODEL_PATH = PROJECT_ROOT / "backend" / "models" / "body_partition_holdout.pth"
-HOLDOUT_REPORT_PATH = PROJECT_ROOT / "docs" / "reports" / "body_partition_subject_eval.json"
+HOLDOUT_REPORT_PATH = PROJECT_ROOT / "docs" / "body-partition" / "body_partition_subject_eval.json"
 AUGMENTED_DATASET_PATH = PROJECT_ROOT / "dataset" / "processed" / "body_partition_train_augmented.npz"
 SLEEP_POSITION_NAMES = {0: "supine", 1: "prone", 2: "left_lateral", 3: "right_lateral"}
 

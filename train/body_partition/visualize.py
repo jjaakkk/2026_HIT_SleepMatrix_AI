@@ -1,11 +1,11 @@
 """Render sample partition visualisations for the report.
 
 Produces one PNG per sleep position with ground-truth vs predicted masks and
-region rectangles, plus a training-curve figure, under ``docs/reports/``.
+region rectangles, plus a training-curve figure, under ``docs/body-partition/``.
 
 Run from the repository root after training::
 
-    python -m train.visualize
+    python -m train.body_partition.visualize
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ from matplotlib.patches import Rectangle
 
 from backend.algorithms.body_partition.inference import BodyPartitionPredictor
 from backend.algorithms.body_partition.partition import REGION_NAMES_ZH, mask_to_rects
-from train.dataset_prep import DEFAULT_SOURCE, build_base_arrays, load_partition_records
+from train.body_partition.dataset_prep import DEFAULT_SOURCE, build_base_arrays, load_partition_records
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-REPORT_DIR = PROJECT_ROOT / "docs" / "reports"
+REPORT_DIR = PROJECT_ROOT / "docs" / "body-partition"
 POSITIONS = {0: "supine 仰卧", 1: "prone 俯卧", 2: "left_lateral 左侧卧", 3: "right_lateral 右侧卧"}
 MASK_CMAP = ListedColormap(
     ["#00000000", "#165dff", "#00b42a", "#ff7d00", "#f53f3f", "#722ed1"]

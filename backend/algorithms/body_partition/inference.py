@@ -1,6 +1,6 @@
 """Reusable inference interface for the trained body-partition network.
 
-Loads one immutable ``.pth`` artifact produced by ``train.train_partition``
+Loads one immutable ``.pth`` artifact produced by ``train.body_partition.train_partition``
 and turns 44x24 pressure frames into a six-class segmentation mask plus the
 five body-region rectangles (shoulder/back/waist/hip/thigh).
 """
@@ -49,7 +49,7 @@ class BodyPartitionPredictor:
         if not self.model_path.is_file():
             raise FileNotFoundError(
                 f"Body-partition model was not found at {self.model_path}. "
-                "Train it with `python -m train.train_partition --split random`."
+                "Train it with `python -m train.body_partition.train_partition --split random`."
             )
         try:
             artifact = torch.load(self.model_path, map_location="cpu", weights_only=False)

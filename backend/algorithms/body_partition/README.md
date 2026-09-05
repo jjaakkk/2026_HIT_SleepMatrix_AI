@@ -15,16 +15,16 @@
 ## 训练（代码在仓库根目录 `train/`）
 
 ```powershell
-python -m train.dataset_prep                        # 解析 data.json -> npz
-python -m train.train_partition --split random      # 70/30 随机划分，目标 ≥95%
-python -m train.train_partition --split subject     # 留人法新用户评估，目标 ≥70%
+python -m train.body_partition.dataset_prep                        # 解析 data.json -> npz
+python -m train.body_partition.train_partition --split random      # 70/30 随机划分，目标 ≥95%
+python -m train.body_partition.train_partition --split subject     # 留人法新用户评估，目标 ≥70%
 ```
 
 产物：
 
 - `backend/models/body_partition.pth` —— 生产模型（random 划分训练）
 - `backend/models/body_partition.metrics.json` —— 验证集指标报告
-- `docs/reports/body_partition_subject_eval.json` —— 新用户评估报告
+- `docs/body-partition/body_partition_subject_eval.json` —— 新用户评估报告
 - `dataset/processed/body_partition_train_augmented.npz` —— 增强后的训练集
 
 ## 推理示例

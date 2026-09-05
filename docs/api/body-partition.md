@@ -3,10 +3,10 @@
 身体部位区域划分（成员 C）的 HTTP 接口。基础地址默认 `http://127.0.0.1:5000`。
 掩码类别约定：`0` 背景，`1` 肩部，`2` 背部，`3` 腰部，`4` 臀部，`5` 大腿部。
 
-## GET /api/health
+## GET /api/body-partition/health
 
-服务与模型可用性。`body_partition` 块包含 `model_available`、`model_path`、
-`dataset_available`。
+本模块资源可用性：`model_available`、`model_path`、`dataset_available`。
+（全局 `/api/health` 由 `backend/app.py` 维护，仅含 SVM 状态。）
 
 ## POST /api/body-partition/predict
 

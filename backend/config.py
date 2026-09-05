@@ -16,31 +16,6 @@ POSTURE_SVM_MODEL_PATH = Path(
         PROJECT_ROOT / "backend" / "models" / "posture_svm.joblib",
     )
 )
-BODY_PARTITION_MODEL_PATH = Path(
-    os.getenv(
-        "SLEEPMATRIX_BODY_PARTITION_MODEL",
-        PROJECT_ROOT / "backend" / "models" / "body_partition.pth",
-    )
-)
-BODY_PARTITION_DATASET_PATH = Path(
-    os.getenv(
-        "SLEEPMATRIX_BODY_PARTITION_DATASET",
-        PROJECT_ROOT / "dataset" / "raw" / "body_partition_data.json",
-    )
-)
-BODY_PARTITION_METRICS_PATH = Path(
-    os.getenv(
-        "SLEEPMATRIX_BODY_PARTITION_METRICS",
-        PROJECT_ROOT / "backend" / "models" / "body_partition.metrics.json",
-    )
-)
-BODY_PARTITION_SUBJECT_EVAL_PATH = Path(
-    os.getenv(
-        "SLEEPMATRIX_BODY_PARTITION_SUBJECT_EVAL",
-        PROJECT_ROOT / "docs" / "reports" / "body_partition_subject_eval.json",
-    )
-)
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
 PRESSURE_MATRIX_SHAPE = MATRIX_SHAPE
 
 HOST = os.getenv("SLEEPMATRIX_HOST", "127.0.0.1")

@@ -17,16 +17,16 @@ python -m venv .venv
 
 ```powershell
 # 1. 解析标注 JSON -> 基础数组（帧 + 六类掩码 + 元数据）
-python -m train.dataset_prep
+python -m train.body_partition.dataset_prep
 
 # 2a. 随机 70/30 划分训练（要求验证集像素准确率 >95%）→ 生产模型
-python -m train.train_partition --split random
+python -m train.body_partition.train_partition --split random
 
 # 2b. 留人法新用户评估（30% 受试者作为全新用户，要求 >70%）
-python -m train.train_partition --split subject
+python -m train.body_partition.train_partition --split subject
 
 # 3. 生成报告用可视化图（每种睡姿的 真值/预测 对比）
-python -m train.visualize
+python -m train.body_partition.visualize
 ```
 
 ## 文件
@@ -36,7 +36,7 @@ python -m train.visualize
 | `dataset_prep.py` | 解析 14400 条标注记录为 `frames/masks/subjects/actions/sleep_positions` |
 | `augment.py` | 帧与掩码联合增强（平移/噪声/增益/基线/死点，不做翻转） |
 | `train_partition.py` | 两种划分协议、加权交叉熵训练、早停、全套指标与工件落盘 |
-| `visualize.py` | 分睡姿的对比图与训练曲线，输出到 `docs/reports/` |
+| `visualize.py` | 分睡姿的对比图与训练曲线，输出到 `docs/body-partition/` |
 
 ## 增强说明
 

@@ -8,6 +8,7 @@ from unittest import mock
 import numpy as np
 
 from backend import config
+from backend.algorithms.body_partition import api as bp_api
 from backend.app import create_app
 from backend.data_utils.contracts import MATRIX_SHAPE
 
@@ -44,21 +45,20 @@ class BodyPartitionApiTests(unittest.TestCase):
     def setUp(self) -> None:
         missing = config.PROJECT_ROOT / "does-not-exist"
         patchers = [
-            mock.patch.object(config, "BODY_PARTITION_MODEL_PATH", missing / "model.pth"),
-            mock.patch.object(config, "BODY_PARTITION_DATASET_PATH", missing / "data.json"),
-            mock.patch.object(config, "BODY_PARTITION_METRICS_PATH", missing / "metrics.json"),
+            mock.patch.object(bp_api, "MODEL_PATH", missing / "model.pth"),
+            mock.patch.object(bp_api, "DATASET_PATH", missing / "data.json"),
+            mock.patch.object(bp_api, "METRICS_PATH", missing / "metrics.json"),
         ]
         for patcher in patchers:
             patcher.start()
             self.addCleanup(patcher.stop)
         self.client = create_app("model-does-not-exist.joblib").test_client()
 
-    def test_health_reports_body_partition_block(self) -> None:
-        response = self.client.get("/api/health")
+    def test_health_reports_resource_state(self) -> None:
+        response = self.client.get("/api/body-partition/health")
         self.assertEqual(response.status_code, 200)
-        block = response.json["body_partition"]
-        self.assertFalse(block["model_available"])
-        self.assertFalse(block["dataset_available"])
+        self.assertFalse(response.json["model_available"])
+        self.assertFalse(response.json["dataset_available"])
 
     def test_metrics_missing_returns_404(self) -> None:
         response = self.client.get("/api/body-partition/metrics")
@@ -94,7 +94,7 @@ class BodyPartitionApiTests(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    config.BODY_PARTITION_MODEL_PATH.is_file(),
+    bp_api.MODEL_PATH.is_file(),
     "trained body-partition model not available",
 )
 class BodyPartitionModelApiTests(unittest.TestCase):
@@ -117,7 +117,7 @@ class BodyPartitionModelApiTests(unittest.TestCase):
         self.assertEqual(len(response.json["regions"]), 5)
 
     def test_metrics_endpoint_serves_training_report(self) -> None:
-        if not config.BODY_PARTITION_METRICS_PATH.is_file():
+        if not bp_api.METRICS_PATH.is_file():
             self.skipTest("training metrics not available")
         response = self.client.get("/api/body-partition/metrics")
         self.assertEqual(response.status_code, 200)

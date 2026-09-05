@@ -61,12 +61,13 @@ SleepMatrix_AI/
 │       ├── posture_cnn.pth
 │       └── body_partition.pth             # 成员 C 分割模型（+ .metrics.json）
 │
-├── train/                                 # 【成员 C】身体部位划分训练代码
-│   ├── dataset_prep.py                    # 标注 JSON -> 帧/掩码数组
-│   ├── augment.py                         # 帧-掩码联合增强（不做翻转）
-│   ├── train_partition.py                 # 70/30 随机划分与留人法两种训练协议
-│   ├── visualize.py                       # 报告用对比图与训练曲线
-│   └── README.md
+├── train/                                 # 训练代码根目录；各算法一个子包
+│   ├── README.md
+│   └── body_partition/                    # 【成员 C】身体部位划分训练
+│       ├── dataset_prep.py                # 标注 JSON -> 帧/掩码数组
+│       ├── augment.py                     # 帧-掩码联合增强（不做翻转）
+│       ├── train_partition.py             # 70/30 随机划分与留人法两种训练协议
+│       └── visualize.py                   # 报告用对比图与训练曲线
 │
 ├── frontend/                              # 【成员 E】只通过共享契约和 HTTP API 获取数据
 │   ├── index.html
@@ -89,7 +90,7 @@ SleepMatrix_AI/
 │
 ├── docs/
 │   ├── api/                               # 接口说明与示例
-│   ├── reports/
+│   ├── body-partition/                    # 【成员 C】实验报告与效果图
 │   ├── ai_conversations/
 │   └── references/
 │
@@ -117,16 +118,16 @@ python -m venv .venv
 
 ```powershell
 # 训练（可选，模型工件已提交 backend/models/body_partition.pth）
-.venv\Scripts\python.exe -m train.dataset_prep
-.venv\Scripts\python.exe -m train.train_partition --split random    # 70/30 生产模型
-.venv\Scripts\python.exe -m train.train_partition --split subject   # 留人法新用户评估
+.venv\Scripts\python.exe -m train.body_partition.dataset_prep
+.venv\Scripts\python.exe -m train.body_partition.train_partition --split random    # 70/30 生产模型
+.venv\Scripts\python.exe -m train.body_partition.train_partition --split subject   # 留人法新用户评估
 
 # 展示页：启动后端后访问
 #   http://127.0.0.1:5000/body-partition/
 ```
 
 详见 `train/README.md`、`backend/algorithms/body_partition/README.md`
-与实验报告 `docs/reports/body_partition_report.md`。
+与实验报告 `docs/body-partition/body_partition_report.md`。
 
 ### 测试
 

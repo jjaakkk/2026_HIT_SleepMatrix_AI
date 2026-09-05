@@ -2,7 +2,10 @@
 
 Run from the repository root after placing the dataset under ``dataset/``::
 
-    python -m backend.algorithms.posture_svm.train_svm
+    python train/posture_svm/train_svm.py --dataset-dir dataset
+
+Module execution with ``python -m train.posture_svm.train_svm`` is also
+supported.
 """
 
 from __future__ import annotations
@@ -11,7 +14,11 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
 from typing import Any
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import joblib
 import numpy as np
@@ -23,6 +30,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
+from backend.algorithms.posture_svm.features import FeatureConfig, extract_feature_matrix
 from backend.data_utils.contracts import (
     CONTRACT_VERSION,
     LABEL_ID_TO_NAME,
@@ -36,12 +44,10 @@ from backend.data_utils.data_loader import (
     validate_subject_coverage,
 )
 
-from .features import FeatureConfig, extract_feature_matrix
-
 
 ARTIFACT_FORMAT = "sleepmatrix-posture-svm"
 ARTIFACT_VERSION = 1
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATASET_DIR = PROJECT_ROOT / "dataset"
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "backend" / "models" / "posture_svm.joblib"
 
@@ -59,11 +65,16 @@ def split_by_subject(
     subjects = np.unique(dataset.subjects)
     if subjects.size < 4:
         raise ValueError(
-            "At least four participants are required for a meaningful 70/30 participant split."
+            "At least four participants are required for a meaningful 70/30 "
+            "participant split."
         )
     validate_subject_coverage(dataset, LABEL_ID_TO_NAME)
 
-    splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=random_state)
+    splitter = GroupShuffleSplit(
+        n_splits=1,
+        test_size=test_size,
+        random_state=random_state,
+    )
     train_indices, test_indices = next(
         splitter.split(dataset.frames, dataset.labels, groups=dataset.subjects)
     )
@@ -74,17 +85,14 @@ def split_by_subject(
     return train_indices, test_indices
 
 
-def build_search(
-    *,
-    number_of_train_subjects: int,
-    n_jobs: int = -1,
-) -> GridSearchCV:
+def build_search(*, number_of_train_subjects: int, n_jobs: int = -1) -> GridSearchCV:
     """Build participant-grouped cross-validation for SVM hyperparameters."""
 
     folds = min(5, number_of_train_subjects)
     if folds < 2:
-        raise ValueError("At least two training participants are needed for cross-validation.")
-
+        raise ValueError(
+            "At least two training participants are needed for cross-validation."
+        )
     pipeline = Pipeline(
         [
             ("scale", StandardScaler()),
@@ -151,7 +159,6 @@ def train_and_evaluate(
         test_size=test_size,
         random_state=random_state,
     )
-
     raw_train_frames = dataset.frames[train_indices]
     raw_train_labels = dataset.labels[train_indices]
     raw_train_subjects = dataset.subjects[train_indices]
@@ -164,8 +171,7 @@ def train_and_evaluate(
         number_of_train_subjects=np.unique(raw_train_subjects).size,
         n_jobs=n_jobs,
     )
-    # Hyperparameter validation uses only original observations. Synthetic
-    # frames are introduced after selection and never act as validation truth.
+    # Synthetic frames never act as validation truth during model selection.
     search.fit(raw_train_features, raw_train_labels, groups=raw_train_subjects)
 
     train_frames, train_labels, _, _ = augment_training_frames(
@@ -182,9 +188,7 @@ def train_and_evaluate(
     train_features = extract_feature_matrix(train_frames, feature_config)
     test_features = extract_feature_matrix(test_frames, feature_config)
 
-    # Enabling SVC probability estimation makes every fit substantially more
-    # expensive. Search without it, then calibrate probabilities once for the
-    # selected hyperparameters in the final model.
+    # Probability estimation is enabled only for the final selected model.
     final_pipeline = clone(search.best_estimator_)
     final_pipeline.set_params(svm__probability=True)
     final_pipeline.fit(train_features, train_labels)
@@ -204,7 +208,9 @@ def train_and_evaluate(
         "accuracy": float(accuracy_score(test_labels, predictions)),
         "classification_report": report,
         "confusion_matrix": confusion_matrix(
-            test_labels, predictions, labels=ordered_labels
+            test_labels,
+            predictions,
+            labels=ordered_labels,
         ).tolist(),
         "best_cv_f1_macro": float(search.best_score_),
         "best_params": search.best_params_,
@@ -214,7 +220,6 @@ def train_and_evaluate(
         "augmented_train_frames": int(train_frames.shape[0]),
         "test_frames": int(test_indices.size),
     }
-
     artifact = {
         "format": ARTIFACT_FORMAT,
         "version": ARTIFACT_VERSION,
@@ -237,12 +242,10 @@ def train_and_evaluate(
         },
         "metrics": metrics,
     }
-
     destination = Path(model_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(artifact, destination)
-    metrics_path = destination.with_suffix(".metrics.json")
-    metrics_path.write_text(
+    destination.with_suffix(".metrics.json").write_text(
         json.dumps(_json_compatible(metrics), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
@@ -262,8 +265,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--include-horizontal-mirror",
         action="store_true",
         help=(
-            "Add horizontal flips. Leave disabled for the documented final dataset, "
-            "which already contains mirrored frames."
+            "Add horizontal flips. Leave disabled for the documented final "
+            "dataset, which already contains mirrored frames."
         ),
     )
     parser.add_argument("--max-frames-per-file", type=int)
@@ -271,8 +274,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
-    args = build_argument_parser().parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = build_argument_parser().parse_args(argv)
     try:
         metrics = train_and_evaluate(
             dataset_dir=args.dataset_dir,
@@ -288,7 +291,6 @@ def main() -> int:
         )
     except (FileNotFoundError, ValueError) as exc:
         raise SystemExit(f"Training aborted: {exc}") from exc
-
     print(json.dumps(_json_compatible(metrics), ensure_ascii=False, indent=2))
     return 0
 

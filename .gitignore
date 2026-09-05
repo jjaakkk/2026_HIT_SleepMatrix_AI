@@ -7,9 +7,10 @@
 !/docs
 !/frontend
 !/tests
-!/dataset
-dataset/*
-!dataset/README.md
+!/train
+
+# Generated model artifacts
+/backend/models/
 
 # Python-generated files
 __pycache__/

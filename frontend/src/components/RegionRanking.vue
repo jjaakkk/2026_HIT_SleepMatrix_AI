@@ -104,7 +104,7 @@ const maxMean = computed(() => Math.max(props.stats[0]?.meanNet ?? 1, 1));
   background: var(--surface-2);
 }
 .rank {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-3);
   text-align: right;
   letter-spacing: 0.02em;

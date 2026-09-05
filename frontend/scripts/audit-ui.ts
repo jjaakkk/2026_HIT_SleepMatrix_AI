@@ -336,16 +336,16 @@ try {
   );
   check('速度分段控件切换', speedActive === '4×', String(speedActive));
 
-  // ---- 气囊：点击行选中 + 滑杆调节所选气囊 ----
+  // ---- 气囊：点击行选中 + 头部滑杆调节所选气囊 ----
   await page.evaluate(() => {
     const zones = [...document.querySelectorAll('.airbag .zone')] as HTMLElement[];
     zones.find((z) => z.querySelector('.zid')?.textContent === '40')?.click();
   });
   await sleep(250);
-  const airbagTag = await page.evaluate(() => document.querySelector('.airbag .zone-tag')?.textContent?.trim());
+  const airbagTag = await page.evaluate(() => document.querySelector('.head-slider .zone-tag')?.textContent?.trim());
   check('气囊行选中 → 滑杆目标切换为所选气囊', airbagTag === '40 · 肩背', String(airbagTag));
   await page.evaluate(() => {
-    const input = document.querySelector('.airbag .slider-row input') as HTMLInputElement;
+    const input = document.querySelector('.head-slider input') as HTMLInputElement;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     setter?.call(input, '70');
     input.dispatchEvent(new Event('input', { bubbles: true }));

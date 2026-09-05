@@ -192,7 +192,7 @@ const confidencePct = computed(() =>
   margin-top: 2px;
 }
 .src-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--accent);
   background: var(--accent-soft);
@@ -257,7 +257,7 @@ const confidencePct = computed(() =>
   }
 }
 .conf-val {
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-2);
   white-space: nowrap;
 }

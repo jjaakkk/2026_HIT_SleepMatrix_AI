@@ -426,7 +426,13 @@ watch(
                 @seek="onSeek"
                 @speed="setSpeed"
               />
-              <PanelCard class="chart-panel" flush title="压力趋势" icon="activity">
+              <PanelCard
+                class="chart-panel"
+                flush
+                title="压力趋势"
+                subtitle="净压力 · 扣除空载基线"
+                icon="activity"
+              >
                 <div class="chart-inner">
                   <PoseTimeline
                     v-if="sourceType === 'dynamic' && showDynLabels && data"

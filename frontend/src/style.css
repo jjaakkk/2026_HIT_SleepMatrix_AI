@@ -68,15 +68,15 @@
     'MiSans', 'Inter Variable', 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
-  /* 字号阶梯（仪表盘密度） */
-  --fs-2xs: 11px;
-  --fs-xs: 12px;
-  --fs-sm: 13px;
-  --fs-base: 14px;
-  --fs-lg: 16px;
-  --fs-xl: 18px;
-  --fs-num: 24px;
-  --fs-num-lg: 32px;
+  /* 字号阶梯（仪表盘密度，v4.1 整体放大：字大饱满且不溢出） */
+  --fs-2xs: 12px;
+  --fs-xs: 13px;
+  --fs-sm: 14px;
+  --fs-base: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 20px;
+  --fs-num: 27px;
+  --fs-num-lg: 34px;
 
   /* ── 间距（4px 节奏） ────────────────────────────────────────────── */
   --s0: 4px;

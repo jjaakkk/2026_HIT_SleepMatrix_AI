@@ -154,12 +154,12 @@ function pick(v: string | number) {
   -webkit-tap-highlight-color: transparent;
 }
 .sz-sm .opt {
-  padding: 4px 10px;
-  min-height: 24px;
+  padding: 5px 11px;
+  min-height: 27px;
 }
 .sz-md .opt {
-  padding: 5px 10px;
-  min-height: 27px;
+  padding: 6px 12px;
+  min-height: 30px;
 }
 .opt:hover:not(:disabled) {
   color: var(--text-1);

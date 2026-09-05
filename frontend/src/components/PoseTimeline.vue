@@ -132,7 +132,7 @@ function onClick(e: MouseEvent) {
   justify-content: space-between;
   gap: 8px;
   margin-top: 4px;
-  font-size: 10px;
+  font-size: 11px;
 }
 .cap-label {
   color: var(--text-2);

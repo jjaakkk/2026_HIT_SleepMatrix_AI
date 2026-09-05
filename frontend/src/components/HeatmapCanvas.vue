@@ -349,7 +349,7 @@ canvas {
 }
 .tt-sub {
   color: rgba(238, 243, 248, 0.62);
-  font-size: 10px;
+  font-size: 11px;
 }
 .tip-enter-active,
 .tip-leave-active {

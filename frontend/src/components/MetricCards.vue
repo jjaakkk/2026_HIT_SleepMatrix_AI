@@ -242,7 +242,7 @@ watch(historyKey, () => {
 }
 .unit {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;

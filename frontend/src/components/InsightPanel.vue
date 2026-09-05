@@ -84,7 +84,7 @@ defineProps<{
 }
 .footnote {
   margin-top: 10px;
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--text-3);
   line-height: 1.5;
 }

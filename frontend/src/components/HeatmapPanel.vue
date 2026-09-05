@@ -327,7 +327,7 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
 .legend-ticks {
   display: flex;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-3);
   margin-top: 4px;
   letter-spacing: -0.01em;

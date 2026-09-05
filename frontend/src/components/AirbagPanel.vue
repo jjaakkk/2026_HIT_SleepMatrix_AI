@@ -48,6 +48,20 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
 <template>
   <PanelCard class="airbag-panel" flush title="气囊状态" icon="wind">
     <template #actions>
+      <!-- 调节滑杆位于标题与状态徽章之间（头部即操作区） -->
+      <div class="head-slider">
+        <Icon name="sliders" :size="13" class="slider-icon" />
+        <input
+          type="range"
+          min="0"
+          max="100"
+          :value="sliderValue"
+          :aria-label="`调节 ${selectedZone.id} 号气囊（${selectedZone.regionHint}）`"
+          :title="`调节所选气囊 ${selectedZone.id} · ${selectedZone.regionHint}（点击下方气囊行切换目标）`"
+          @input="onSlider"
+        />
+        <span class="zone-tag num">{{ selectedZone.id }} · {{ selectedZone.regionHint }}</span>
+      </div>
       <UiBadge variant="warning" :dot="false">
         <Icon name="info" :size="11" />模拟信号 · 未接入设备
       </UiBadge>
@@ -61,7 +75,7 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
           :title="p.description"
           @click="applyPreset(p.name)"
         >
-          <Icon name="wind" :size="13" />
+          <Icon name="wind" :size="14" />
           {{ p.name }}
         </button>
       </div>
@@ -75,7 +89,7 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
             type="button"
             class="zone"
             :class="{ sel: selectedId === z.id }"
-            :title="`点击选中 ${z.id} 号气囊（${z.regionHint}），滑杆调节其充气程度`"
+            :title="`点击选中 ${z.id} 号气囊（${z.regionHint}），顶部滑杆调节其充气程度`"
             @click="selectZone(z.id)"
           >
             <span
@@ -95,21 +109,6 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
           </button>
         </div>
       </div>
-
-      <div class="slider-row">
-        <Icon name="sliders" :size="12" class="slider-icon" />
-        <span class="slider-label">调节</span>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          :value="sliderValue"
-          :aria-label="`调节 ${selectedZone.id} 号气囊（${selectedZone.regionHint}）`"
-          @input="onSlider"
-        />
-        <span class="zone-tag num">{{ selectedZone.id }} · {{ selectedZone.regionHint }}</span>
-      </div>
-      <p class="foot">点击气囊行选中 · 滑杆调节所选气囊 · 预设一键切换</p>
     </div>
   </PanelCard>
 </template>
@@ -122,7 +121,7 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
 .airbag {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   padding: 12px 16px 12px;
   height: 100%;
   min-height: 0;
@@ -172,11 +171,11 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
 .group {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
   min-width: 0;
 }
 .group-title {
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--text-3);
@@ -185,10 +184,10 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
 }
 .zone {
   display: grid;
-  grid-template-columns: 24px 30px minmax(0, 1fr) 42px 32px;
+  grid-template-columns: 26px 32px minmax(0, 1fr) 44px 34px;
   align-items: center;
-  gap: 7px;
-  font-size: var(--fs-2xs);
+  gap: 8px;
+  font-size: var(--fs-xs);
   width: 100%;
   min-width: 0;
   background: transparent;
@@ -216,7 +215,7 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
   border-radius: var(--r-xs);
   text-align: center;
   padding: 1.5px 0;
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 500;
   letter-spacing: 0;
 }
@@ -225,7 +224,7 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
   white-space: nowrap;
 }
 .bar {
-  height: 6px;
+  height: 7px;
   background: var(--surface-3);
   border-radius: 999px;
   overflow: hidden;
@@ -239,34 +238,27 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
 .pct {
   text-align: right;
   color: var(--text-1);
-  font-weight: 500;
-  font-size: 11px;
+  font-weight: 600;
+  font-size: 12.5px;
 }
 .st {
   color: var(--text-3);
-  font-size: 10px;
+  font-size: 11px;
   text-align: right;
   white-space: nowrap;
 }
-.slider-row {
+/* 头部滑杆：位于标题与状态徽章之间 */
+.head-slider {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--fs-2xs);
-  color: var(--text-2);
   flex: none;
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 8px;
 }
 .slider-icon {
   color: var(--text-3);
 }
-.slider-label {
-  white-space: nowrap;
-}
-.slider-row input {
-  flex: 1;
-  min-width: 40px;
+.head-slider input {
+  width: 190px;
   accent-color: var(--accent);
   height: 16px;
   cursor: pointer;
@@ -274,19 +266,11 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
 .zone-tag {
   white-space: nowrap;
   color: var(--accent);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 500;
   border: 1px solid var(--accent-soft-strong);
   background: var(--accent-soft);
   border-radius: var(--r-pill);
-  padding: 1.5px 9px;
-}
-.foot {
-  flex: none;
-  font-size: 10px;
-  color: var(--text-3);
-  text-align: right;
-  padding: 0 2px;
-  margin-top: -2px;
+  padding: 2px 9px;
 }
 </style>

@@ -1,7 +1,14 @@
 <script setup lang="ts">
+/**
+ * 压力趋势图（v4.1 重设计）：
+ * 单一语义轴 —— 只画「净压力」（扣除空载基线），两条同口径曲线：
+ *   平均净压力（主视觉，面积+线） + 最大净压力（细线）
+ * 选定区域的平均压力以虚线叠加（同一口径）。
+ * 原则：同单位同口径的指标才共享一个轴；接触面积等异口径指标不进此图
+ * （其趋势在指标卡 sparkline 中呈现），杜绝"几合一"的混轴混淆。
+ */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { FrameMetrics } from '../core/metrics.ts';
-import { contactIndex } from '../core/metrics.ts';
 import { niceTicks } from '../render/chart-scale.ts';
 import Icon from './ui/Icon.vue';
 
@@ -10,30 +17,34 @@ const props = defineProps<{
   history: FrameMetrics[];
   /** 当前回放帧号（播放头） */
   frameIdx: number;
-  /** 追加曲线（如选定区域的逐帧平均压力），主图左轴 */
+  /** 追加曲线（选定区域逐帧平均净压力），虚线叠加 */
   extraSeries?: { label: string; color: string; values: number[] }[];
 }>();
 
-/** 主图曲线（压力，单轴）——颜色取自语义令牌（与指标卡/图例一致，随主题） */
+/** 主图曲线：统一「净压力」口径（颜色取自语义令牌） */
 const mainSeries = [
-  { key: 'maxRaw', label: '最大压力', varName: '--c-coral', fallback: '#f4695f', value: (m: FrameMetrics) => m.maxRaw },
-  { key: 'meanNet', label: '平均压力', varName: '--accent', fallback: '#0d7a6b', value: (m: FrameMetrics) => m.meanNet },
+  {
+    key: 'meanNet',
+    label: '平均净压力',
+    varName: '--accent',
+    fallback: '#0d7a6b',
+    value: (m: FrameMetrics) => m.meanNet,
+  },
+  {
+    key: 'maxNet',
+    label: '最大净压力',
+    varName: '--c-coral',
+    fallback: '#f4695f',
+    value: (m: FrameMetrics) => m.maxNet,
+  },
 ];
-/** 接触面积（0-100%，独立小图，单轴） */
-const contactSeries = {
-  label: '接触面积 %',
-  varName: '--c-blue',
-  fallback: '#3b82f6',
-  value: (m: FrameMetrics) => contactIndex(m),
-};
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const hover = ref<{ x: number; y: number; idx: number; values: { label: string; color: string; v: string }[] } | null>(null);
 
-const PAD = { left: 40, right: 12, top: 12, bottom: 18 };
-const STRIP_H = 46;
+const PAD = { left: 44, right: 14, top: 14, bottom: 24 };
 
-/* 运行时解析 CSS 语义色（支持明暗主题） */
+/* 运行时解析 CSS 语义色 */
 function cssColor(hexFallback: string, varName: string): string {
   const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   return raw || hexFallback;
@@ -67,26 +78,25 @@ function draw() {
   ctx.clearRect(0, 0, w, h);
 
   const grid = cssColor('rgba(120,125,140,0.12)', '--border');
-  const tick = cssColor('#8f9199', '--text-3');
-  const playhead = cssColor('#1a1a1e', '--text-1');
-  const maxRawColor = resolveSeriesColor(mainSeries[0]);
-  const meanColor = resolveSeriesColor(mainSeries[1]);
-  const contactColor = resolveSeriesColor(contactSeries);
+  const tick = cssColor('#757575', '--text-3');
+  const playhead = cssColor('#171717', '--text-1');
+  const meanColor = resolveSeriesColor(mainSeries[0]);
+  const maxColor = resolveSeriesColor(mainSeries[1]);
 
   const n = props.history.length;
   if (n === 0) {
     ctx.fillStyle = tick;
-    ctx.font = '12px "IBM Plex Mono", monospace';
+    ctx.font = '13px "IBM Plex Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('暂无数据', w / 2, h / 2 - 6);
     return;
   }
 
-  const mainH = h - STRIP_H - 24;
   const plotW = w - PAD.left - PAD.right;
+  const plotH = h - PAD.top - PAD.bottom;
   const xOf = (i: number) => PAD.left + (i / Math.max(n - 1, 1)) * plotW;
 
-  // ---- 主图（压力，单轴） ----
+  // 单轴量程：仅净压力系列 + 区域叠加（同口径）
   let min = Infinity;
   let max = -Infinity;
   for (const m of props.history) {
@@ -103,9 +113,10 @@ function draw() {
     }
   }
   const ticks = niceTicks(Math.min(min, 0), Math.max(max, 1), 5);
-  const yOf = (v: number) => PAD.top + mainH - ((v - ticks.min) / (ticks.max - ticks.min)) * mainH;
+  const yOf = (v: number) => PAD.top + plotH - ((v - ticks.min) / (ticks.max - ticks.min)) * plotH;
 
-  ctx.font = '10px "IBM Plex Mono", monospace';
+  // 网格 + Y 轴刻度
+  ctx.font = '11px "IBM Plex Mono", monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (const t of ticks.ticks) {
@@ -117,34 +128,28 @@ function draw() {
     ctx.lineTo(w - PAD.right, y);
     ctx.stroke();
     ctx.fillStyle = tick;
-    ctx.fillText(String(t), PAD.left - 7, y);
+    ctx.fillText(String(t), PAD.left - 8, y);
   }
-  // x 轴帧号（最多 8 个刻度）
+  // X 轴帧号（最多 8 个刻度）
   const xStep = Math.max(1, Math.ceil(n / 8));
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for (let i = 0; i < n; i += xStep) {
     ctx.fillStyle = tick;
-    ctx.fillText(String(i), xOf(i), PAD.top + mainH + 6);
+    ctx.fillText(String(i), xOf(i), PAD.top + plotH + 8);
   }
 
-  function strokeSeries(
-    values: number[],
-    color: string,
-    width: number,
-    dashed: boolean,
-    fill: boolean,
-  ) {
+  function strokeSeries(values: number[], color: string, width: number, dashed: boolean, fill: boolean) {
     const pts = values.map((v, i) => ({ x: xOf(i), y: yOf(v) }));
     if (pts.length < 2) return;
     if (fill) {
-      const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + mainH);
-      grad.addColorStop(0, alpha(color, 0.16));
+      const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + plotH);
+      grad.addColorStop(0, alpha(color, 0.15));
       grad.addColorStop(1, alpha(color, 0));
       ctx.beginPath();
-      ctx.moveTo(pts[0].x, PAD.top + mainH);
+      ctx.moveTo(pts[0].x, PAD.top + plotH);
       for (const p of pts) ctx.lineTo(p.x, p.y);
-      ctx.lineTo(pts[pts.length - 1].x, PAD.top + mainH);
+      ctx.lineTo(pts[pts.length - 1].x, PAD.top + plotH);
       ctx.closePath();
       ctx.fillStyle = grad;
       ctx.fill();
@@ -164,61 +169,21 @@ function draw() {
     ctx.restore();
   }
 
-  // 平均压力面积 + 线（主视觉）
-  strokeSeries(props.history.map(mainSeries[1].value), meanColor, 1.8, false, true);
-  strokeSeries(props.history.map(mainSeries[0].value), maxRawColor, 1.5, false, false);
+  // 平均净压力（面积主视觉）→ 最大净压力（细线）→ 区域叠加（虚线）
+  strokeSeries(props.history.map(mainSeries[0].value), meanColor, 1.8, false, true);
+  strokeSeries(props.history.map(mainSeries[1].value), maxColor, 1.4, false, false);
   for (const es of props.extraSeries ?? []) {
     if (es.values.length === 0) continue;
     strokeSeries(es.values.slice(0, n), es.color, 2, true, false);
   }
 
-  // ---- 底部接触面积小图 ----
-  const stripY = PAD.top + mainH + 20;
-  const stripBottom = stripY + STRIP_H - 8;
-  const cY = (v: number) => stripBottom - ((v - 0) / 100) * (STRIP_H - 8);
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = tick;
-  ctx.fillText('0', PAD.left - 7, stripBottom);
-  ctx.fillText('100', PAD.left - 7, stripY);
-  ctx.strokeStyle = grid;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(PAD.left, stripY);
-  ctx.lineTo(w - PAD.right, stripY);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(PAD.left, stripBottom);
-  ctx.lineTo(w - PAD.right, stripBottom);
-  ctx.stroke();
-  const cpts = props.history.map((m, i) => ({ x: xOf(i), y: cY(contactSeries.value(m)) }));
-  const cgrad = ctx.createLinearGradient(0, stripY, 0, stripBottom);
-  cgrad.addColorStop(0, alpha(contactColor, 0.2));
-  cgrad.addColorStop(1, alpha(contactColor, 0));
-  ctx.beginPath();
-  ctx.moveTo(cpts[0].x, stripBottom);
-  for (const p of cpts) ctx.lineTo(p.x, p.y);
-  ctx.lineTo(cpts[cpts.length - 1].x, stripBottom);
-  ctx.closePath();
-  ctx.fillStyle = cgrad;
-  ctx.fill();
-  ctx.strokeStyle = contactColor;
-  ctx.lineWidth = 1.4;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  for (let i = 0; i < cpts.length; i++) {
-    if (i === 0) ctx.moveTo(cpts[i].x, cpts[i].y);
-    else ctx.lineTo(cpts[i].x, cpts[i].y);
-  }
-  ctx.stroke();
-
-  // ---- 播放头 ----
+  // 播放头
   const cx = xOf(Math.min(Math.max(props.frameIdx, 0), n - 1));
   ctx.strokeStyle = alpha(playhead, 0.55);
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   ctx.moveTo(cx, PAD.top);
-  ctx.lineTo(cx, stripBottom);
+  ctx.lineTo(cx, PAD.top + plotH);
   ctx.stroke();
   ctx.fillStyle = playhead;
   ctx.beginPath();
@@ -247,7 +212,6 @@ function onMove(e: MouseEvent) {
       color: es.color,
       v: (es.values[Math.min(idx, es.values.length - 1)] ?? 0).toFixed(1),
     })),
-    { label: contactSeries.label, color: resolveSeriesColor(contactSeries), v: contactSeries.value(m).toFixed(1) },
   ];
   hover.value = { x, y, idx, values: rows };
 }
@@ -255,24 +219,16 @@ function onLeave() {
   hover.value = null;
 }
 
-let themeObserver: MutationObserver | null = null;
 onMounted(() => {
   draw();
   window.addEventListener('resize', draw);
-  // 主题切换（html[data-theme]）后重绘，系列颜色跟随语义令牌
-  themeObserver = new MutationObserver(draw);
-  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 });
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', draw);
-  themeObserver?.disconnect();
-});
+onBeforeUnmount(() => window.removeEventListener('resize', draw));
 watch(() => [props.history, props.frameIdx], draw);
 
 const legendItems = computed(() => [
   ...mainSeries.map((s) => ({ label: s.label, varName: s.varName, dashed: false })),
   ...(props.extraSeries ?? []).map((es) => ({ label: es.label, varName: undefined, rawColor: es.color, dashed: true })),
-  { label: contactSeries.label, varName: contactSeries.varName, dashed: false },
 ]);
 
 function legendSwatchStyle(it: { varName?: string; rawColor?: string; dashed: boolean }) {
@@ -297,6 +253,7 @@ function tooltipStyle(h: { x: number; y: number }) {
         <span class="legend-swatch" :style="legendSwatchStyle(it)" aria-hidden="true" />
         {{ it.label }}
       </span>
+      <span class="legend-unit">单位 · 净压力（扣除空载）</span>
     </div>
     <div class="chart-wrap" @mousemove="onMove" @mouseleave="onLeave">
       <canvas ref="canvasRef" class="chart" />
@@ -325,7 +282,7 @@ function tooltipStyle(h: { x: number; y: number }) {
 }
 .legend {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 14px;
   padding-bottom: 8px;
   flex: none;
@@ -344,6 +301,12 @@ function tooltipStyle(h: { x: number; y: number }) {
   height: 3px;
   border-radius: 999px;
   display: inline-block;
+}
+.legend-unit {
+  margin-left: auto;
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+  white-space: nowrap;
 }
 .chart-wrap {
   position: relative;
@@ -367,12 +330,12 @@ function tooltipStyle(h: { x: number; y: number }) {
   z-index: 10;
   line-height: 1.7;
   box-shadow: var(--shadow-pop);
-  min-width: 128px;
+  min-width: 132px;
 }
 .tt-title {
   color: var(--text-3);
   margin-bottom: 3px;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.03em;
 }
 .tt-row {

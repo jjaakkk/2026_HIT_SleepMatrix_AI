@@ -67,6 +67,9 @@ SleepMatrix_AI/
 │
 ├── train/                                 # 训练代码根目录；各算法一个子包
 │   ├── README.md
+│   ├── posture_svm/                       # 【成员 A】SVM 睡姿识别训练
+│   │   ├── train_svm.py                   # SVM 划分、调参、训练和评估
+│   │   └── README.md                      # SVM 训练使用说明
 │   └── body_partition/                    # 【成员 C】身体部位划分训练
 │       ├── dataset_prep.py                # 标注 JSON -> 帧/掩码数组
 │       ├── augment.py                     # 帧-掩码联合增强（不做翻转）
@@ -89,11 +92,6 @@ SleepMatrix_AI/
 │
 ├── dataset/                               # 本地数据集；整个目录不提交 Git
 │
-├── train/                                 # 训练入口脚本
-│   └── posture_svm/
-│       ├── train_svm.py                  # SVM 划分、调参、训练和评估
-│       └── README.md                     # SVM 训练使用说明
-│
 ├── docs/
 │   ├── api/                               # 接口说明与示例
 │   ├── body-partition/                    # 【成员 C】实验报告与效果图
@@ -107,6 +105,27 @@ SleepMatrix_AI/
     ├── test_body_partition.py             # 成员 C 标注解析、掩码、指标与增强测试
     └── test_api.py                        # HTTP 集成测试
 ```
+
+## 统一后端 API
+
+`backend/app.py` 装配全部算法模块（SVM/CNN 睡姿、身体分区、弱区增强），
+统一提供 HTTP 接口：契约、错误信封（`{"error", "message"}`）、健康检查
+与懒加载模型均遵循同一套约定。完整说明见 `docs/api/unified-api.md`。
+
+| 端点 | 说明 |
+|---|---|
+| `GET /api/health` | 服务与各模型状态（`models` 面板 + 兼容旧前端的顶层 `posture_svm`） |
+| `GET /api/contracts/posture` | 共享睡姿契约（唯一事实源） |
+| `POST /api/posture/predict` | 单帧睡姿推理；`"model": "svm"\|"cnn"\|"ensemble"`，缺省 `svm` |
+| `POST /api/frame/analyze` | 单帧聚合分析（睡姿 + 分区 + 增强），模块不可用时优雅降级 |
+| `POST /api/weak-enhance` | 弱压力区域增强（纯 NumPy，无模型，始终可用） |
+| `/api/body-partition/*` | 身体部位区域划分（见 `docs/api/body-partition.md`） |
+
+模型工件：`backend/models/body_partition.pth` 已入库，可直接使用；
+`backend/models/posture_svm.joblib` 与 `outputs/posture_cnn/best_model.pt`
+为本地训练产物，需分别运行 `python train\posture_svm\train_svm.py ...`
+与 `python -m backend.algorithms.posture_cnn.train ...` 生成。所有路径均可
+用 `SLEEPMATRIX_*` 环境变量覆盖（见 `backend/config.py`）。
 
 ## 安装与启动
 

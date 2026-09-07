@@ -9,6 +9,7 @@ import Icon from './ui/Icon.vue';
 import { turboColor } from '../render/heatmap';
 import type { HeatmapMode, ScaleMode } from '../render/heatmap';
 import type { BodyRegion, SpinePoint } from '../core/types';
+import type { AirbagState } from '../core/airbag';
 
 const props = defineProps<{
   frame: ArrayLike<number>;
@@ -32,6 +33,10 @@ const props = defineProps<{
   legendCaption: string;
   /** 量程超限警告文案（null = 正常） */
   scaleWarning?: string | null;
+  /** 布置图传感器叠加层 */
+  showSensors?: boolean;
+  airbagStates?: AirbagState[] | null;
+  selectedSensor?: number | null;
 }>();
 
 const emit = defineEmits<{
@@ -45,6 +50,8 @@ const emit = defineEmits<{
   speed: [v: number];
   'update:mode': [v: HeatmapMode];
   'update:scale': [v: ScaleMode];
+  'update:showSensors': [v: boolean];
+  'sensor-select': [id: number];
 }>();
 
 const legendCanvas = ref<HTMLCanvasElement | null>(null);
@@ -137,6 +144,17 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
           @update:model-value="emit('update:scale', $event as ScaleMode)"
         />
       </div>
+      <button
+        type="button"
+        class="sensor-toggle"
+        :class="{ on: showSensors }"
+        :aria-pressed="showSensors"
+        title="气囊-传感器布置图 60 传感器叠加层（点击传感器联动压力曲线）"
+        @click="emit('update:showSensors', !showSensors)"
+      >
+        <Icon name="crosshair" :size="12" />
+        传感器
+      </button>
     </div>
 
     <div class="canvas-zone">
@@ -151,9 +169,13 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
         :show-spine="showSpine"
         :show-calf="showCalf"
         :selected-region="selectedRegion"
+        :show-sensors="showSensors"
+        :airbag-states="airbagStates"
+        :selected-sensor="selectedSensor"
         @hover="emit('hover', $event)"
         @region-hover="emit('region-hover', $event)"
         @region-select="emit('region-select', $event)"
+        @sensor-select="emit('sensor-select', $event)"
       />
     </div>
 
@@ -293,6 +315,34 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
 }
 .tool-group :deep(.seg) {
   width: auto;
+}
+.sensor-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 10px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.sensor-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+.sensor-toggle.on {
+  color: var(--accent);
+  border-color: var(--accent-soft-strong);
+  background: var(--accent-soft);
 }
 
 /* 画布区 */

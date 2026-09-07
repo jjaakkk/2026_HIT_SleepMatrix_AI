@@ -9,6 +9,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from './ui/Icon.vue';
 import { Bed3DScene, type PostureId } from '../three/bed3d';
 import { SLEEP_POS_NAMES } from '../core/types';
+import type { AirbagState } from '../core/airbag';
 
 const props = withDefaults(
   defineProps<{
@@ -19,8 +20,10 @@ const props = withDefaults(
     /** 帧来源说明（显示在标题副行） */
     sourceLabel?: string;
     modelUrl?: string;
+    /** 气囊实时状态（模拟源）→ 3D 条带充气动画 */
+    airbagStates?: AirbagState[] | null;
   }>(),
-  { sourceLabel: '', modelUrl: '' },
+  { sourceLabel: '', modelUrl: '', airbagStates: null },
 );
 
 const emit = defineEmits<{ close: [] }>();
@@ -91,6 +94,13 @@ watch(
   (f) => scene?.setFrame(f),
 );
 watch(posture, (p) => scene?.setPosture(p));
+watch(
+  () => props.airbagStates,
+  (states) => {
+    if (states) scene?.setAirbagStates(states);
+  },
+  { immediate: true },
+);
 watch(
   () => props.sleepPos,
   () => {

@@ -1,107 +1,134 @@
 /**
- * 气囊-传感器布置图（气囊-传感器 标注 布置图20240624.pdf）结构化数据。
+ * 气囊-传感器布置图（气囊-传感器 标注 布置图20240624.pdf，AutoCAD 导出）权威数据。
  *
- * 统一坐标系（仰卧者视角，也是后端压力矩阵的语义视角）：
- *   - 床体：1800mm（X，仰卧者左→右）× 2000mm（Y，头→脚）
- *   - 原点：床体左上角（仰卧者的左上 = 观者视角的右上，图纸是仰卧者视角镜像）
- *   - 气囊矩形坐标来自图纸人工校核（精确到 1mm，权威数据）
- *   - 传感器坐标由 PDF 矢量图形提取（60 个圆，12 列 × 5 行），转换到同一坐标系
+ * 统一坐标系（按最终所见图纸方向，页面旋转已处理）：
+ *   - 原点：床体左上角；X 向右 0→1800mm；Y 向下 0→2000mm
+ *   - 床体：1800mm × 2000mm
+ *   - 本坐标系 = 观者视角；3D 转换：x3 = (x - 900)/1000 m，z3 = (y - 1000)/1000 m
+ *     （床头在 3D 的 -Z 方向）
  *
- * 对应关系（颜色 = 传感器→气囊归属）：
- *   绿色区域  → 气囊 40/41/42（仰卧者左上，肩背/腰/臀三条带）
- *   黄色区域  → 气囊 64/65/66（仰卧者右上，肩背/腰/臀三条带）
- *   红色区域  → 气囊 12（仰卧者左半）/ 13（仰卧者右半，大腿区）
+ * 数据来源：图纸人工精确校核（mm，3 位小数），为程序直接使用。
  */
 
 export const BED_WIDTH_MM = 1800;
 export const BED_HEIGHT_MM = 2000;
 
+export type AirbagRegion = 'left_upper' | 'right_upper' | 'left_lower' | 'right_lower';
+export type AirbagColor = 'green' | 'yellow' | 'red';
+
 export interface AirbagRect {
   id: string;
-  color: 'green' | 'yellow' | 'red';
-  /** 对应身体区域提示 */
-  regionHint: string;
-  /** 仰卧者坐标系 mm：x1=左边界, y1=上边界, x2=右边界, y2=下边界 */
+  region: AirbagRegion;
+  color: AirbagColor;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  cx: number;
+  cy: number;
+  width: number;
+  height: number;
+}
+
+/** 8 个气囊矩形（权威校核数据，mm） */
+export const AIRBAG_RECTS: AirbagRect[] = [
+  { id: '40', region: 'left_upper', color: 'green', x1: 197.013, y1: 399.167, x2: 802.023, y2: 484.265, cx: 499.518, cy: 441.716, width: 605.01, height: 85.097 },
+  { id: '41', region: 'left_upper', color: 'green', x1: 197.013, y1: 519.193, x2: 802.023, y2: 604.29, cx: 499.518, cy: 561.741, width: 605.01, height: 85.097 },
+  { id: '42', region: 'left_upper', color: 'green', x1: 197.013, y1: 639.218, x2: 802.023, y2: 724.104, cx: 499.518, cy: 681.661, width: 605.01, height: 84.886 },
+  { id: '64', region: 'right_upper', color: 'yellow', x1: 996.989, y1: 399.167, x2: 1601.999, y2: 484.265, cx: 1299.494, cy: 441.716, width: 605.01, height: 85.097 },
+  { id: '65', region: 'right_upper', color: 'yellow', x1: 996.989, y1: 519.193, x2: 1601.999, y2: 604.29, cx: 1299.494, cy: 561.741, width: 605.01, height: 85.097 },
+  { id: '66', region: 'right_upper', color: 'yellow', x1: 996.989, y1: 639.218, x2: 1601.999, y2: 724.104, cx: 1299.494, cy: 681.661, width: 605.01, height: 84.886 },
+  { id: '12', region: 'left_lower', color: 'red', x1: 197.013, y1: 1494.426, x2: 802.023, y2: 1579.311, cx: 499.518, cy: 1536.868, width: 605.01, height: 84.886 },
+  { id: '13', region: 'right_lower', color: 'red', x1: 996.989, y1: 1494.426, x2: 1601.999, y2: 1579.311, cx: 1299.494, cy: 1536.868, width: 605.01, height: 84.886 },
+];
+
+export const AIRBAG_BY_ID: Record<string, AirbagRect> = Object.fromEntries(
+  AIRBAG_RECTS.map((r) => [r.id, r]),
+);
+
+/** 图底部三个无编号大矩形（不属于任何气囊，仅作 auxiliary 区域） */
+export interface AuxiliaryRegion {
+  color: AirbagColor;
   x1: number;
   y1: number;
   x2: number;
   y2: number;
 }
 
-/** 气囊矩形（权威校核数据，仰卧者坐标系 mm） */
-export const AIRBAG_RECTS: AirbagRect[] = [
-  { id: '40', color: 'green', regionHint: '肩背', x1: 198, y1: 400, x2: 802, y2: 487 },
-  { id: '41', color: 'green', regionHint: '腰', x1: 198, y1: 519, x2: 802, y2: 606 },
-  { id: '42', color: 'green', regionHint: '臀', x1: 198, y1: 637, x2: 802, y2: 726 },
-  { id: '64', color: 'yellow', regionHint: '肩背', x1: 998, y1: 400, x2: 1602, y2: 487 },
-  { id: '65', color: 'yellow', regionHint: '腰', x1: 998, y1: 519, x2: 1602, y2: 606 },
-  { id: '66', color: 'yellow', regionHint: '臀', x1: 998, y1: 637, x2: 1602, y2: 726 },
-  { id: '12', color: 'red', regionHint: '大腿', x1: 198, y1: 1497, x2: 802, y2: 1584 },
-  { id: '13', color: 'red', regionHint: '大腿', x1: 998, y1: 1497, x2: 1602, y2: 1584 },
+export const AUXILIARY_REGIONS: AuxiliaryRegion[] = [
+  { color: 'red', x1: 1107.915, y1: 1613.393, x2: 1524.521, y2: 1943.41 },
+  { color: 'green', x1: 691.097, y1: 1613.393, x2: 1107.915, y2: 1943.41 },
+  { color: 'yellow', x1: 274.491, y1: 1613.393, x2: 691.097, y2: 1943.41 },
 ];
+
+// ---------------------------------------------------------------------------
+// 60 个压力传感器（12 列 × 5 行，权威坐标）
+// ---------------------------------------------------------------------------
+
+export type SensorRegion = 'green' | 'yellow' | 'left_red' | 'right_red';
 
 export interface AirbagSensor {
   id: number;
-  /** 图中行 0-4（0=最上=头侧） */
-  gridRow: number;
-  /** 图中列 0-11（0=仰卧者最左） */
-  gridCol: number;
-  /** 仰卧者坐标系 mm */
+  gridRow: number; // 0-4，0=最上（头侧）
+  gridCol: number; // 0-11，0=最左
   xMm: number;
   yMm: number;
-  /** 所属气囊编号（行带近似划分：绿/黄区 行0-1→上带、行2→中带、行3-4→下带） */
+  region: SensorRegion;
+  /** 所属气囊编号 */
   airbagId: string;
 }
 
-// 传感器列中心（仰卧者坐标系 mm，由 PDF 矢量圆换算：X_sleeper = 1800 - X_drawing）
-const COL_X_MM = [47, 202, 358, 513, 668, 824, 979, 1134, 1290, 1445, 1600, 1756];
-// 传感器行中心（仰卧者坐标系 mm，头→脚）
-const ROW_Y_MM = [369, 585, 802, 1019, 1235];
+const SENSOR_COL_X_MM = [
+  140.174, 278.196, 416.218, 554.24, 692.262, 830.283,
+  968.305, 1106.327, 1244.349, 1382.159, 1520.181, 1658.203,
+];
+const SENSOR_ROW_Y_MM = [806.979, 936.953, 1066.928, 1196.902, 1326.877];
 
-/** 每格所属气囊：按 PDF 矢量颜色分区 + 行带近似划分 */
-function airbagForCell(row: number, col: number): string {
-  const greenRows = [0, 1]; // 行 0-1 → 上带（40/64）
-  const isGreen = col <= 3 || (row === 4 && col === 4);
-  const isRed = (col >= 4 && col <= 7) && !(row === 4 && col === 4);
-  const isYellow = col >= 8 || (row === 4 && col === 7);
-  if (isGreen) {
-    const band = greenRows.includes(row) ? '0' : row === 2 ? '1' : '2';
-    return ['40', '41', '42'][Number(band)];
-  }
-  if (isYellow) {
-    const band = greenRows.includes(row) ? '0' : row === 2 ? '1' : '2';
-    return ['64', '65', '66'][Number(band)];
-  }
-  if (isRed) {
-    return COL_X_MM[col] < 900 ? '12' : '13';
-  }
-  // 行 4 的边界列按最近气囊归类
-  if (col === 4) return '42';
-  if (col === 7) return '66';
-  return col < 6 ? '12' : '13';
-}
-
-// 传感器编号表（仰卧者视角，每行从最外侧读到中线，再读另一侧；
-// 编号顺序来自布置图人工读取，颜色分区以 PDF 矢量为准）
+/** 每行 12 个传感器 ID（从上到下、从左到右，权威读取） */
 const SENSOR_IDS_BY_ROW: number[][] = [
-  [32, 33, 34, 35, 43, 14, 15, 67, 56, 57, 58, 59], // 行0：绿(0-3) 红(4-7) 黄(8-11)
+  [32, 33, 34, 35, 43, 14, 15, 67, 56, 57, 58, 59],
   [24, 25, 26, 27, 4, 5, 6, 7, 48, 49, 50, 51],
   [36, 37, 38, 39, 16, 17, 18, 19, 60, 61, 62, 63],
   [28, 29, 30, 31, 8, 9, 10, 11, 52, 53, 54, 55],
   [20, 21, 22, 23, 0, 1, 2, 3, 44, 45, 46, 47],
 ];
 
+/** 区域归属（权威颜色定义；注意 67 为黄色、右侧红色区缺 67 只有 9 个） */
+const GREEN_IDS = new Set([32, 33, 34, 35, 24, 25, 26, 27, 36, 37, 38, 39, 28, 29, 30, 31, 20, 21, 22, 23]);
+const LEFT_RED_IDS = new Set([43, 14, 4, 5, 16, 17, 8, 9, 0, 1]);
+const RIGHT_RED_IDS = new Set([15, 6, 7, 18, 19, 10, 11, 2, 3]);
+const YELLOW_IDS = new Set([67, 56, 57, 58, 59, 48, 49, 50, 51, 60, 61, 62, 63, 52, 53, 54, 55, 44, 45, 46, 47]);
+
+/** 绿/黄区域行带划分（近似：行0-1→上带 40/64，行2→中带 41/65，行3-4→下带 42/66） */
+function airbagForSensor(row: number, region: SensorRegion): string {
+  if (region === 'left_red') return '12';
+  if (region === 'right_red') return '13';
+  const band = row <= 1 ? 0 : row === 2 ? 1 : 2;
+  return region === 'green' ? ['40', '41', '42'][band] : ['64', '65', '66'][band];
+}
+
+function regionForId(id: number): SensorRegion {
+  if (GREEN_IDS.has(id)) return 'green';
+  if (LEFT_RED_IDS.has(id)) return 'left_red';
+  if (RIGHT_RED_IDS.has(id)) return 'right_red';
+  if (YELLOW_IDS.has(id)) return 'yellow';
+  return 'green';
+}
+
 function buildSensors(): AirbagSensor[] {
   const list: AirbagSensor[] = [];
   for (let row = 0; row < 5; row++) {
     for (let col = 0; col < 12; col++) {
+      const id = SENSOR_IDS_BY_ROW[row][col];
+      const region = regionForId(id);
       list.push({
-        id: SENSOR_IDS_BY_ROW[row][col],
+        id,
         gridRow: row,
         gridCol: col,
-        xMm: Math.round(COL_X_MM[col]),
-        yMm: Math.round(ROW_Y_MM[row]),
-        airbagId: airbagForCell(row, col),
+        xMm: SENSOR_COL_X_MM[col],
+        yMm: SENSOR_ROW_Y_MM[row],
+        region,
+        airbagId: airbagForSensor(row, region),
       });
     }
   }
@@ -110,11 +137,24 @@ function buildSensors(): AirbagSensor[] {
 
 export const AIRBAG_SENSORS: AirbagSensor[] = buildSensors();
 
+export const SENSOR_BY_ID: Record<number, AirbagSensor> = Object.fromEntries(
+  AIRBAG_SENSORS.map((s) => [s.id, s]),
+);
+
 /** 气囊编号 → 传感器编号列表 */
 export const AIRBAG_TO_SENSORS: Record<string, number[]> = {};
 for (const sensor of AIRBAG_SENSORS) {
   (AIRBAG_TO_SENSORS[sensor.airbagId] ??= []).push(sensor.id);
 }
+
+/** 传感器区域 → 颜色（与 2D/3D 视觉一致） */
+export const REGION_COLORS: Record<SensorRegion | AirbagColor, string> = {
+  green: '#3FB950',
+  yellow: '#D29922',
+  left_red: '#F85149',
+  right_red: '#F85149',
+  red: '#F85149',
+};
 
 export const AIRBAG_ID_TO_COLOR: Record<string, string> = {
   '40': '#3FB950',
@@ -127,29 +167,47 @@ export const AIRBAG_ID_TO_COLOR: Record<string, string> = {
   '13': '#F85149',
 };
 
+/** 气囊 → 大致对应身体部位（布置图未标注部位名，为展示提示） */
+export const AIRBAG_HINTS: Record<string, string> = {
+  '40': '肩背',
+  '41': '腰',
+  '42': '臀',
+  '12': '大腿',
+  '64': '肩背',
+  '65': '腰',
+  '66': '臀',
+  '13': '大腿',
+};
+
 // ---------------------------------------------------------------------------
-// 坐标系转换助手（前端 2D 热力图 / 3D 场景统一使用）
+// 坐标系转换助手
 // ---------------------------------------------------------------------------
 
-/** 3D 场景：床中心为原点，X 仰卧者左(-0.9) → 右(+0.9)，Z 头(-1.0) → 脚(+1.0)，Y 向上 */
+/** mm（图纸坐标）→ 3D 场景坐标：床中心原点，X 左(-0.9)→右(+0.9)，Z 头(-1)→脚(+1)，Y 向上 */
+export function mmTo3D(xMm: number, yMm: number): { x: number; y: number; z: number } {
+  return {
+    x: (xMm - BED_WIDTH_MM / 2) / 1000,
+    y: 0,
+    z: (yMm - BED_HEIGHT_MM / 2) / 1000,
+  };
+}
+
+/** 气囊矩形 → 3D 范围（x0<x1 左→右；z0<z1 头→脚） */
 export function airbagRectTo3D(rect: AirbagRect): {
   x0: number;
   x1: number;
   z0: number;
   z1: number;
 } {
-  return {
-    x0: (rect.x1 - BED_WIDTH_MM / 2) / 1000,
-    x1: (rect.x2 - BED_WIDTH_MM / 2) / 1000,
-    z0: -(BED_HEIGHT_MM / 2 - rect.y1) / 1000,
-    z1: -(BED_HEIGHT_MM / 2 - rect.y2) / 1000,
-  };
+  const a = mmTo3D(rect.x1, rect.y1);
+  const b = mmTo3D(rect.x2, rect.y2);
+  return { x0: a.x, x1: b.x, z0: a.z, z1: b.z };
 }
 
-/** mm → 44×24 压力矩阵单元格（行=头→脚，列=仰卧者左→右；近似投影） */
+/** mm → 44×24 压力矩阵单元格（行=头→脚 0-43，列=左→右 0-23，近似投影） */
 export function mmToMatrixCell(xMm: number, yMm: number): { row: number; col: number } {
   return {
-    row: Math.round((yMm / BED_HEIGHT_MM) * 43),
-    col: Math.round((xMm / BED_WIDTH_MM) * 23),
+    row: Math.min(43, Math.max(0, Math.round((yMm / BED_HEIGHT_MM) * 43))),
+    col: Math.min(23, Math.max(0, Math.round((xMm / BED_WIDTH_MM) * 23))),
   };
 }

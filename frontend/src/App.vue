@@ -17,9 +17,10 @@ import { computeMetrics, metricsHistory, isBedOccupied, poseDuration } from './c
 import { parseRegion, parseSpine } from './core/parsers/annotations.ts';
 import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stats.ts';
 import { PlaybackController } from './core/playback.ts';
-import { SimulatedAirbagSource } from './core/airbag.ts';
+import { SimulatedAirbagSource, type AirbagState } from './core/airbag.ts';
 import { generateSimulatedDataset } from './core/simulate.ts';
 import { usePostureInference } from './composables/usePostureInference.ts';
+import { SENSOR_BY_ID, mmToMatrixCell } from './core/airbag-layout.ts';
 
 // 缩放适配：固定 1920×1080 设计空间，任意分辨率整体等比缩放（零滚动零溢出）
 const { scale } = useScaleToFit();
@@ -194,6 +195,47 @@ const sleepPos3d = computed(() => {
 
 // 气囊模拟源（真实设备就绪后换成实现同一接口的适配器）
 const airbagSource = new SimulatedAirbagSource();
+const airbagStates = ref<AirbagState[]>(airbagSource.getStates());
+airbagSource.subscribe(() => {
+  airbagStates.value = airbagSource.getStates();
+});
+
+// 布置图传感器叠加层与点击联动
+const showSensors = ref(true);
+const selectedSensor = ref<number | null>(null);
+const sensorCurve = computed(() => {
+  if (selectedSensor.value === null) return [];
+  const s = SENSOR_BY_ID[selectedSensor.value];
+  if (!s) return [];
+  const cell = mmToMatrixCell(s.xMm, s.yMm);
+  const idx = cell.row * 24 + cell.col;
+  const bg = bgForMetrics.value;
+  return framesList.value.map((f) =>
+    Math.max((f[idx] ?? 0) - (bg?.[idx] ?? 0), 0),
+  );
+});
+const extraSeries = computed(() => {
+  if (selectedSensor.value !== null && sensorCurve.value.length) {
+    const s = SENSOR_BY_ID[selectedSensor.value];
+    return [
+      {
+        label: `传感器 ${selectedSensor.value} 净压`,
+        color: s ? (s.region === 'green' ? '#3FB950' : s.region === 'yellow' ? '#D29922' : '#F85149') : '#8b8f98',
+        values: sensorCurve.value,
+      },
+    ];
+  }
+  if (selectedRegion.value !== null && regionCurve.value.length) {
+    return [
+      {
+        label: `${selectedRegionName.value}平均压力`,
+        color: selectedRegionColor.value,
+        values: regionCurve.value,
+      },
+    ];
+  }
+  return [];
+});
 
 function onAirbagPreset(name: string) {
   if (name === '腰部支撑增强') {
@@ -291,6 +333,14 @@ function selectSource(t: 'static' | 'dynamic') {
   sourceType.value = t;
   rebuildController();
 }
+function onRegionSelect(i: number) {
+  selectedRegion.value = i;
+  selectedSensor.value = null;
+}
+function onSensorSelect(id: number) {
+  selectedSensor.value = id;
+  selectedRegion.value = null;
+}
 
 // URL hash 状态（便于直链演示）
 function applyHash() {
@@ -359,7 +409,10 @@ onMounted(async () => {
 watch(() => frameCount.value, (n) => {
   if (frameIdx.value >= n) frameIdx.value = n - 1;
 });
-watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
+watch([sourceType, actionIdx, personIdx], () => {
+  selectedRegion.value = null;
+  selectedSensor.value = null;
+});
 
 // 推理触发：帧号 / 来源 / 后端状态变化时队列化当前帧（组合式函数内部节流 + latest-wins）
 watch(
@@ -425,10 +478,15 @@ watch(
                 :legend-ticks="legendTicks"
                 :legend-caption="legendCaption"
                 :scale-warning="scaleWarning"
+                :show-sensors="showSensors"
+                :airbag-states="airbagStates"
+                :selected-sensor="selectedSensor"
                 @update:mode="mode = $event"
                 @update:scale="scaleMode = $event"
+                @update:show-sensors="showSensors = $event"
                 @region-hover="hoverRegion = $event"
-                @region-select="selectedRegion = $event"
+                @region-select="onRegionSelect"
+                @sensor-select="onSensorSelect"
                 @toggle-play="togglePlay"
                 @step-prev="stepPrev"
                 @step-next="stepNext"
@@ -452,17 +510,7 @@ watch(
                   <MetricsChart
                     :history="history"
                     :frame-idx="frameIdx"
-                    :extra-series="
-                      selectedRegion !== null && regionCurve.length
-                        ? [
-                            {
-                              label: `${selectedRegionName}平均压力`,
-                              color: selectedRegionColor,
-                              values: regionCurve,
-                            },
-                          ]
-                        : []
-                    "
+                    :extra-series="extraSeries"
                   />
                 </div>
               </PanelCard>
@@ -523,6 +571,7 @@ watch(
         :frame="displayFrame"
         :sleep-pos="sleepPos3d"
         :source-label="sourceLabel"
+        :airbag-states="airbagStates"
         @close="show3D = false"
       />
     </div>

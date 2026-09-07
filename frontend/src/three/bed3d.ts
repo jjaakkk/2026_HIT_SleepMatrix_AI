@@ -3,14 +3,22 @@
  *
  * - 程序化床垫：顶面 44×24 压力热力图实时纹理，与 2D 热力图共用
  *   turbo 色带 / 自动量程（computeFrameMax + GAMMA.smooth）。
- * - 气囊分区：按 AIRBAG_ZONES 布局投影为半透明条带（与 2D 气囊模块一致）。
+ * - 气囊分区：按布置图权威矩形坐标投影为半透明条带，随状态充气动画
  * - 人体：Cesium RiggedFigure（CC BY 4.0，见 public/models/CREDITS.md），
  *   骨骼旋转摆出仰卧/俯卧/左侧卧/右侧卧，附带呼吸起伏与转体过渡动画。
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { AIRBAG_RECTS, AIRBAG_ID_TO_COLOR, airbagRectTo3D } from '../core/airbag-layout';
+import {
+  AIRBAG_RECTS,
+  AIRBAG_SENSORS,
+  AIRBAG_ID_TO_COLOR,
+  REGION_COLORS,
+  airbagRectTo3D,
+  mmTo3D,
+} from '../core/airbag-layout';
+import type { AirbagState } from '../core/airbag';
 import { computeFrameMax, GAMMA, valueToColor } from '../render/heatmap';
 
 export type PostureId = 0 | 1 | 2 | 3;
@@ -185,6 +193,7 @@ export class Bed3DScene {
 
     this.buildMattress();
     this.buildAirbagStrips();
+    this.buildSensorDots();
     this.setFrame(new Float32Array(ROWS * COLS));
   }
 
@@ -216,12 +225,16 @@ export class Bed3DScene {
     this.scene.add(top);
   }
 
-  /** 气囊分区条带（真实布置图矩形坐标，半透明贴在床面上方） */
+  /** 气囊分区条带（真实布置图矩形坐标，半透明贴在床面上方；充气时抬升/增亮） */
+  private airbagStrips = new Map<string, THREE.Mesh>();
+  /** 布置图 60 传感器点 */
+  private sensorDots = new Map<number, THREE.Mesh>();
+
   private buildAirbagStrips(): void {
     for (const rect of AIRBAG_RECTS) {
       const { x0, x1, z0, z1 } = airbagRectTo3D(rect);
       const strip = new THREE.Mesh(
-        new THREE.BoxGeometry(Math.abs(x1 - x0), 0.012, Math.abs(z1 - z0)),
+        new THREE.BoxGeometry(Math.abs(x1 - x0), 0.02, Math.abs(z1 - z0)),
         new THREE.MeshBasicMaterial({
           color: AIRBAG_ID_TO_COLOR[rect.id] ?? '#888888',
           transparent: true,
@@ -229,8 +242,43 @@ export class Bed3DScene {
           depthWrite: false,
         }),
       );
-      strip.position.set((x0 + x1) / 2, MATTRESS_THK + 0.014, (z0 + z1) / 2);
+      strip.position.set((x0 + x1) / 2, MATTRESS_THK + 0.012, (z0 + z1) / 2);
       this.scene.add(strip);
+      this.airbagStrips.set(rect.id, strip);
+    }
+  }
+
+  /** 布置图 60 传感器点（颜色 = 区域归属） */
+  private buildSensorDots(): void {
+    for (const sensor of AIRBAG_SENSORS) {
+      const p = mmTo3D(sensor.xMm, sensor.yMm);
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.013, 10, 10),
+        new THREE.MeshBasicMaterial({
+          color: REGION_COLORS[sensor.region] ?? '#888888',
+        }),
+      );
+      dot.position.set(p.x, MATTRESS_THK + 0.028, p.z);
+      this.scene.add(dot);
+      this.sensorDots.set(sensor.id, dot);
+    }
+  }
+
+  /** 气囊状态 → 条带充气动画（抬升+增亮）与传感器点增强（模拟支撑效果） */
+  setAirbagStates(states: AirbagState[]): void {
+    const byId = new Map(states.map((s) => [s.zoneId, s.pressure]));
+    for (const [id, strip] of this.airbagStrips) {
+      const p = (byId.get(id) ?? 0) / 100;
+      strip.scale.y = 0.35 + p * 0.9;
+      strip.position.y = MATTRESS_THK + 0.008 + (0.02 * strip.scale.y) / 2;
+      (strip.material as THREE.MeshBasicMaterial).opacity = 0.22 + p * 0.34;
+    }
+    for (const sensor of AIRBAG_SENSORS) {
+      const dot = this.sensorDots.get(sensor.id);
+      if (!dot) continue;
+      const p = (byId.get(sensor.airbagId) ?? 0) / 100;
+      const s = 0.9 + p * 1.1;
+      dot.scale.setScalar(s);
     }
   }
 

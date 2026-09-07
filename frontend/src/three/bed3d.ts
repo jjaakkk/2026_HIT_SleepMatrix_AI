@@ -42,14 +42,14 @@ interface BonePose {
 
 /**
  * 绕身体长轴的翻转角（模型为 Mixamo rig，GLTFLoader 加载后 Y-up：
- * 立姿头 +Y、正面 +Z（护目镜侧）、左半身 -X）。
+ * 立姿头 +Y、正面 -Z（实测仰卧渲染结果校准）、左半身 -X）。
  * 结构：fitGroup（世界轴对齐）⊃ rollGroup（绕世界 Z=床长轴翻转）⊃ modelRoot（绕 X 转 -90° 躺平，头→-Z）。
- * roll=0 正面朝上（仰卧）；俯卧=π、左侧卧=+π/2（左半身 -X 贴床）、右侧卧=-π/2。
- * （实测：rotX=-π/2 时骨架头 z<0 脚 z>0 平躺；roll 符号按左半身 -X 推导）
+ * roll=π 正面朝上（仰卧）；俯卧=0、左侧卧=+π/2（左半身 -X 贴床）、右侧卧=-π/2。
+ * （实测：rotX=-π/2 时骨架头 z<0 脚 z>0 平躺）
  */
 const POSTURE_ROLL: Record<PostureId, number> = {
-  0: 0,
-  1: Math.PI,
+  0: Math.PI,
+  1: 0,
   2: Math.PI / 2,
   3: -Math.PI / 2,
 };

@@ -107,7 +107,7 @@ try {
 
   // ---- four postures ----
   const names = ['supine', 'prone', 'left-lateral', 'right-lateral'];
-  const expectRoll = [0, Math.PI, Math.PI / 2, -Math.PI / 2];
+  const expectRoll = [Math.PI, 0, Math.PI / 2, -Math.PI / 2];
   let allVisible = true;
   let allTrunkOnBed = true;
   const visibilityDetails: string[] = [];

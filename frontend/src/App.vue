@@ -204,8 +204,8 @@ airbagSource.subscribe(() => {
   airbagStates.value = airbagSource.getStates();
 });
 
-// 布置图传感器叠加层与点击联动
-const showSensors = ref(true);
+// 布置图传感器叠加层与点击联动（默认关闭，部位区域默认显示）
+const showSensors = ref(false);
 const selectedSensor = ref<number | null>(null);
 const sensorCurve = computed(() => {
   if (selectedSensor.value === null) return [];

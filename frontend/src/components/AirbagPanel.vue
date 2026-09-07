@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
 import {
-  AIRBAG_ZONES,
   AIRBAG_PRESETS,
   airbagStateText,
   type AirbagSource,
   type AirbagState,
 } from '../core/airbag.ts';
+import { AIRBAG_RECTS, AIRBAG_ID_TO_COLOR, AIRBAG_HINTS } from '../core/airbag-layout.ts';
 import PanelCard from './ui/PanelCard.vue';
 import UiBadge from './ui/UiBadge.vue';
 import Icon from './ui/Icon.vue';
@@ -25,7 +25,9 @@ function stateOf(id: string) {
 }
 /** 当前选中的气囊（点击行选中，滑杆调节该气囊） */
 const selectedId = ref('41');
-const selectedZone = computed(() => AIRBAG_ZONES.find((z) => z.id === selectedId.value) ?? AIRBAG_ZONES[1]);
+const selectedZone = computed(
+  () => AIRBAG_RECTS.find((z) => z.id === selectedId.value) ?? AIRBAG_RECTS[1],
+);
 function selectZone(id: string) {
   selectedId.value = id;
 }
@@ -39,8 +41,8 @@ function applyPreset(name: string) {
   emit('preset', name);
 }
 
-const left = computed(() => AIRBAG_ZONES.filter((z) => z.side === '左半区'));
-const right = computed(() => AIRBAG_ZONES.filter((z) => z.side === '右半区'));
+const left = computed(() => AIRBAG_RECTS.filter((z) => z.region.startsWith('left')));
+const right = computed(() => AIRBAG_RECTS.filter((z) => z.region.startsWith('right')));
 
 const sliderValue = computed(() => stateOf(selectedId.value).pressure);
 </script>
@@ -56,11 +58,11 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
           min="0"
           max="100"
           :value="sliderValue"
-          :aria-label="`调节 ${selectedZone.id} 号气囊（${selectedZone.regionHint}）`"
-          :title="`调节所选气囊 ${selectedZone.id} · ${selectedZone.regionHint}（点击下方气囊行切换目标）`"
+          :aria-label="`调节 ${selectedZone.id} 号气囊（${AIRBAG_HINTS[selectedZone.id]}）`"
+          :title="`调节所选气囊 ${selectedZone.id} · ${AIRBAG_HINTS[selectedZone.id]}（点击下方气囊行切换目标）`"
           @input="onSlider"
         />
-        <span class="zone-tag num">{{ selectedZone.id }} · {{ selectedZone.regionHint }}</span>
+        <span class="zone-tag num">{{ selectedZone.id }} · {{ AIRBAG_HINTS[selectedZone.id] }}</span>
       </div>
       <UiBadge variant="warning" :dot="false">
         <Icon name="info" :size="11" />模拟信号 · 未接入设备
@@ -89,19 +91,19 @@ const sliderValue = computed(() => stateOf(selectedId.value).pressure);
             type="button"
             class="zone"
             :class="{ sel: selectedId === z.id }"
-            :title="`点击选中 ${z.id} 号气囊（${z.regionHint}），顶部滑杆调节其充气程度`"
+            :title="`点击选中 ${z.id} 号气囊（${AIRBAG_HINTS[z.id]}），顶部滑杆调节其充气程度`"
             @click="selectZone(z.id)"
           >
             <span
               class="zid num"
-              :style="{ color: z.color, borderColor: `color-mix(in srgb, ${z.color} 45%, transparent)`, background: `color-mix(in srgb, ${z.color} 10%, transparent)` }"
+              :style="{ color: AIRBAG_ID_TO_COLOR[z.id], borderColor: `color-mix(in srgb, ${AIRBAG_ID_TO_COLOR[z.id]} 45%, transparent)`, background: `color-mix(in srgb, ${AIRBAG_ID_TO_COLOR[z.id]} 10%, transparent)` }"
               >{{ z.id }}</span
             >
-            <span class="hint">{{ z.regionHint }}</span>
+            <span class="hint">{{ AIRBAG_HINTS[z.id] }}</span>
             <span class="bar" aria-hidden="true">
               <span
                 class="fill"
-                :style="{ width: stateOf(z.id).pressure + '%', background: z.color }"
+                :style="{ width: stateOf(z.id).pressure + '%', background: AIRBAG_ID_TO_COLOR[z.id] }"
               />
             </span>
             <span class="pct num">{{ stateOf(z.id).pressure.toFixed(0) }}%</span>

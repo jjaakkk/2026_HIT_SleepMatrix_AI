@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import SidebarControls from './components/SidebarControls.vue';
+import Bed3DView from './components/Bed3DView.vue';
+import Bed3DInline from './components/Bed3DInline.vue';
 import HeatmapPanel from './components/HeatmapPanel.vue';
+import Icon from './components/ui/Icon.vue';
 import InsightPanel from './components/InsightPanel.vue';
 import MetricsChart from './components/MetricsChart.vue';
 import AirbagPanel from './components/AirbagPanel.vue';
@@ -16,9 +19,10 @@ import { computeMetrics, metricsHistory, isBedOccupied, poseDuration } from './c
 import { parseRegion, parseSpine } from './core/parsers/annotations.ts';
 import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stats.ts';
 import { PlaybackController } from './core/playback.ts';
-import { SimulatedAirbagSource } from './core/airbag.ts';
+import { SimulatedAirbagSource, type AirbagState } from './core/airbag.ts';
 import { generateSimulatedDataset } from './core/simulate.ts';
 import { usePostureInference } from './composables/usePostureInference.ts';
+import { SENSOR_BY_ID, mmToMatrixCell } from './core/airbag-layout.ts';
 
 // 缩放适配：固定 1920×1080 设计空间，任意分辨率整体等比缩放（零滚动零溢出）
 const { scale } = useScaleToFit();
@@ -184,8 +188,58 @@ const showCalf = ref(false);
 const showDynLabels = ref(false);
 const selectedRegion = ref<number | null>(null);
 
+// 3D 睡姿演示叠加层
+const show3D = ref(false);
+/** 中下方面板视图：3D 演示持久展示，压力曲线按按钮切换 */
+const viewMode = ref<'3d' | 'chart'>('3d');
+const sleepPos3d = computed(() => {
+  const p = currentAction.value?.sleepPos;
+  return typeof p === 'number' && p >= 0 && p <= 3 ? p : 0;
+});
+
 // 气囊模拟源（真实设备就绪后换成实现同一接口的适配器）
 const airbagSource = new SimulatedAirbagSource();
+const airbagStates = ref<AirbagState[]>(airbagSource.getStates());
+airbagSource.subscribe(() => {
+  airbagStates.value = airbagSource.getStates();
+});
+
+// 布置图传感器叠加层与点击联动（默认关闭，部位区域默认显示）
+const showSensors = ref(false);
+const selectedSensor = ref<number | null>(null);
+const sensorCurve = computed(() => {
+  if (selectedSensor.value === null) return [];
+  const s = SENSOR_BY_ID[selectedSensor.value];
+  if (!s) return [];
+  const cell = mmToMatrixCell(s.xMm, s.yMm);
+  const idx = cell.row * 24 + cell.col;
+  const bg = bgForMetrics.value;
+  return framesList.value.map((f) =>
+    Math.max((f[idx] ?? 0) - (bg?.[idx] ?? 0), 0),
+  );
+});
+const extraSeries = computed(() => {
+  if (selectedSensor.value !== null && sensorCurve.value.length) {
+    const s = SENSOR_BY_ID[selectedSensor.value];
+    return [
+      {
+        label: `传感器 ${selectedSensor.value} 净压`,
+        color: s ? (s.region === 'green' ? '#3FB950' : s.region === 'yellow' ? '#D29922' : '#F85149') : '#8b8f98',
+        values: sensorCurve.value,
+      },
+    ];
+  }
+  if (selectedRegion.value !== null && regionCurve.value.length) {
+    return [
+      {
+        label: `${selectedRegionName.value}平均压力`,
+        color: selectedRegionColor.value,
+        values: regionCurve.value,
+      },
+    ];
+  }
+  return [];
+});
 
 function onAirbagPreset(name: string) {
   if (name === '腰部支撑增强') {
@@ -283,6 +337,14 @@ function selectSource(t: 'static' | 'dynamic') {
   sourceType.value = t;
   rebuildController();
 }
+function onRegionSelect(i: number) {
+  selectedRegion.value = i;
+  selectedSensor.value = null;
+}
+function onSensorSelect(id: number) {
+  selectedSensor.value = id;
+  selectedRegion.value = null;
+}
 
 // URL hash 状态（便于直链演示）
 function applyHash() {
@@ -351,7 +413,10 @@ onMounted(async () => {
 watch(() => frameCount.value, (n) => {
   if (frameIdx.value >= n) frameIdx.value = n - 1;
 });
-watch([sourceType, actionIdx, personIdx], () => (selectedRegion.value = null));
+watch([sourceType, actionIdx, personIdx], () => {
+  selectedRegion.value = null;
+  selectedSensor.value = null;
+});
 
 // 推理触发：帧号 / 来源 / 后端状态变化时队列化当前帧（组合式函数内部节流 + latest-wins）
 watch(
@@ -393,6 +458,7 @@ watch(
                 @update:show-calf="showCalf = $event"
                 @update:show-dyn-labels="showDynLabels = $event"
                 @update:pose-source="inference.setPoseSource($event)"
+                @open-3d="show3D = true"
               />
             </aside>
 
@@ -416,10 +482,15 @@ watch(
                 :legend-ticks="legendTicks"
                 :legend-caption="legendCaption"
                 :scale-warning="scaleWarning"
+                :show-sensors="showSensors"
+                :airbag-states="airbagStates"
+                :selected-sensor="selectedSensor"
                 @update:mode="mode = $event"
                 @update:scale="scaleMode = $event"
+                @update:show-sensors="showSensors = $event"
                 @region-hover="hoverRegion = $event"
-                @region-select="selectedRegion = $event"
+                @region-select="onRegionSelect"
+                @sensor-select="onSensorSelect"
                 @toggle-play="togglePlay"
                 @step-prev="stepPrev"
                 @step-next="stepNext"
@@ -429,32 +500,55 @@ watch(
               <PanelCard
                 class="chart-panel"
                 flush
-                title="压力趋势"
-                subtitle="净压力 · 扣除空载基线"
-                icon="activity"
+                :title="viewMode === '3d' ? '三维睡姿演示' : '压力趋势'"
+                :subtitle="viewMode === '3d' ? '人体模型 · 床垫热力图 · 气囊布置（实时联动）' : '净压力 · 扣除空载基线'"
+                :icon="viewMode === '3d' ? 'cube' : 'activity'"
               >
                 <div class="chart-inner">
-                  <PoseTimeline
-                    v-if="sourceType === 'dynamic' && showDynLabels && data"
-                    :labels="data.dynamic.labels"
-                    :frame-idx="frameIdx"
-                    @seek="(i) => controller?.seek(i)"
+                  <div class="view-switch" role="group" aria-label="视图切换">
+                    <button
+                      type="button"
+                      class="vs-btn"
+                      :class="{ on: viewMode === '3d' }"
+                      :aria-pressed="viewMode === '3d'"
+                      title="持久展示 3D 睡姿视图"
+                      @click="viewMode = '3d'"
+                    >
+                      <Icon name="cube" :size="12" />
+                      3D 视图
+                    </button>
+                    <button
+                      type="button"
+                      class="vs-btn"
+                      :class="{ on: viewMode === 'chart' }"
+                      :aria-pressed="viewMode === 'chart'"
+                      title="压力趋势折线图"
+                      @click="viewMode = 'chart'"
+                    >
+                      <Icon name="activity" :size="12" />
+                      压力曲线
+                    </button>
+                  </div>
+                  <Bed3DInline
+                    v-if="viewMode === '3d'"
+                    :frame="displayFrame"
+                    :sleep-pos="sleepPos3d"
+                    :airbag-states="airbagStates"
+                    @fullscreen="show3D = true"
                   />
-                  <MetricsChart
-                    :history="history"
-                    :frame-idx="frameIdx"
-                    :extra-series="
-                      selectedRegion !== null && regionCurve.length
-                        ? [
-                            {
-                              label: `${selectedRegionName}平均压力`,
-                              color: selectedRegionColor,
-                              values: regionCurve,
-                            },
-                          ]
-                        : []
-                    "
-                  />
+                  <template v-else>
+                    <PoseTimeline
+                      v-if="sourceType === 'dynamic' && showDynLabels && data"
+                      :labels="data.dynamic.labels"
+                      :frame-idx="frameIdx"
+                      @seek="(i) => controller?.seek(i)"
+                    />
+                    <MetricsChart
+                      :history="history"
+                      :frame-idx="frameIdx"
+                      :extra-series="extraSeries"
+                    />
+                  </template>
                 </div>
               </PanelCard>
             </section>
@@ -508,6 +602,15 @@ watch(
           <p class="loading-text">正在加载监测数据…</p>
         </div>
       </Transition>
+
+      <Bed3DView
+        v-if="show3D"
+        :frame="displayFrame"
+        :sleep-pos="sleepPos3d"
+        :source-label="sourceLabel"
+        :airbag-states="airbagStates"
+        @close="show3D = false"
+      />
     </div>
   </div>
 </template>
@@ -603,6 +706,46 @@ watch(
 .chart-inner :deep(.chart-root) {
   flex: 1;
   min-height: 0;
+}
+.chart-inner :deep(.bed3d-inline) {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 视图切换（3D 持久 / 压力曲线） */
+.view-switch {
+  display: flex;
+  gap: 5px;
+  flex: none;
+  padding-bottom: 8px;
+}
+.vs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 2px 10px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.vs-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+.vs-btn.on {
+  color: var(--accent);
+  border-color: var(--accent-soft-strong);
+  background: var(--accent-soft);
 }
 .ranking-panel {
   min-width: 0;

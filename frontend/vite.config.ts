@@ -18,4 +18,12 @@ export default defineConfig({
   base: './',
   server: { proxy: apiProxy },
   preview: { proxy: apiProxy },
+  build: {
+    rollupOptions: {
+      output: {
+        // three.js 单独成 chunk，避免主包过大
+        manualChunks: { three: ['three'] },
+      },
+    },
+  },
 })

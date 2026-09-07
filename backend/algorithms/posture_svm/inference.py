@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
 import sys
@@ -24,23 +23,13 @@ from backend.data_utils.contracts import (
     MATRIX_SHAPE,
 )
 from backend.data_utils.data_loader import iter_pressure_frames
+from backend.data_utils.predictions import PosturePrediction
 
+__all__ = ["PosturePrediction", "PostureSVMClassifier"]
 
 DEFAULT_MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "posture_svm.joblib"
 EXPECTED_ARTIFACT_FORMAT = "sleepmatrix-posture-svm"
 SUPPORTED_ARTIFACT_VERSION = 1
-
-
-@dataclass(frozen=True)
-class PosturePrediction:
-    label_id: int
-    label: str
-    label_zh: str
-    confidence: float
-    probabilities: dict[str, float]
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
 class PostureSVMClassifier:

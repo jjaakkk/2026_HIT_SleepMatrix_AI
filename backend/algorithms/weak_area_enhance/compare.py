@@ -8,6 +8,12 @@ from pathlib import Path
 import numpy as np
 
 from .enhance import EnhancementConfig, enhance_pressure
+from .joint_evaluation import (
+    SKELETON_EDGES,
+    JointAnnotatedFrame,
+    joint_guided_metrics,
+    load_joint_record,
+)
 
 
 def _component_count(mask: np.ndarray) -> int:
@@ -150,6 +156,7 @@ def save_comparison(
     title: str = "Weak-pressure enhancement",
     display_floor_ratio: float = 0.07,
     minimum_component_size: int = 4,
+    keypoints: tuple[tuple[float, float] | None, ...] | None = None,
 ) -> None:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -189,6 +196,31 @@ def save_comparison(
             difference, cmap="magma", interpolation="nearest", vmin=0
         )
         axes[2].set_title("Added intensity")
+        if keypoints is not None:
+            for axis in axes[:2]:
+                for first, second in SKELETON_EDGES:
+                    start = keypoints[first]
+                    end = keypoints[second]
+                    if start is None or end is None:
+                        continue
+                    axis.plot(
+                        [start[0], end[0]],
+                        [start[1], end[1]],
+                        color="white",
+                        linewidth=1.0,
+                        alpha=0.85,
+                    )
+                available = [point for point in keypoints if point is not None]
+                if available:
+                    axis.scatter(
+                        [point[0] for point in available],
+                        [point[1] for point in available],
+                        s=10,
+                        c="#00f5ff",
+                        edgecolors="black",
+                        linewidths=0.3,
+                        zorder=3,
+                    )
         for axis in axes:
             axis.set_xticks([])
             axis.set_yticks([])
@@ -205,6 +237,7 @@ def save_comparison(
             output,
             title,
             color_max,
+            keypoints,
         )
 
 
@@ -236,6 +269,7 @@ def _save_comparison_with_pillow(
     output: Path,
     title: str,
     color_max: float,
+    keypoints: tuple[tuple[float, float] | None, ...] | None = None,
 ) -> None:
     from PIL import Image, ImageDraw
 
@@ -263,13 +297,55 @@ def _save_comparison_with_pillow(
         )
         canvas.paste(image, (left, title_height))
         draw.text((left, 32), label_text, fill="black")
+        if keypoints is not None and index < 2:
+            def canvas_point(point: tuple[float, float]) -> tuple[float, float]:
+                return (
+                    left + (point[0] + 0.5) * scale,
+                    title_height + (point[1] + 0.5) * scale,
+                )
+
+            for first, second in SKELETON_EDGES:
+                start = keypoints[first]
+                end = keypoints[second]
+                if start is not None and end is not None:
+                    draw.line(
+                        [canvas_point(start), canvas_point(end)],
+                        fill="white",
+                        width=2,
+                    )
+            for point in keypoints:
+                if point is None:
+                    continue
+                x, y = canvas_point(point)
+                radius = 3
+                draw.ellipse(
+                    (x - radius, y - radius, x + radius, y + radius),
+                    fill="#00f5ff",
+                    outline="black",
+                    width=1,
+                )
     canvas.save(output)
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="dataset TXT file")
+    parser.add_argument("input", type=Path, help="dataset TXT file or joint JSON file")
     parser.add_argument("--frame", type=int, default=0, help="zero-based frame index")
+    parser.add_argument(
+        "--folder",
+        help="person/folder name required for a joint JSON input, for example SAI",
+    )
+    parser.add_argument(
+        "--action",
+        type=int,
+        help="action number required for a joint JSON input",
+    )
+    parser.add_argument(
+        "--occurrence",
+        type=int,
+        default=0,
+        help="which duplicate JSON record to use (0=first, 1=augmented counterpart)",
+    )
     parser.add_argument("--output", type=Path, default=Path("weak_pressure_comparison.png"))
     parser.add_argument("--gamma", type=float, default=EnhancementConfig.gamma)
     parser.add_argument("--strength", type=float, default=EnhancementConfig.strength)
@@ -290,22 +366,46 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _build_parser().parse_args()
-    frames = load_pressure_frames(args.input)
-    if not 0 <= args.frame < len(frames):
-        raise IndexError(f"frame must be between 0 and {len(frames) - 1}")
+    annotated: JointAnnotatedFrame | None = None
+    if args.input.suffix.casefold() == ".json":
+        if args.folder is None or args.action is None:
+            raise ValueError("--folder and --action are required for a joint JSON input")
+        annotated = load_joint_record(
+            args.input,
+            folder=args.folder,
+            action=args.action,
+            frame=args.frame,
+            occurrence=args.occurrence,
+        )
+        original = annotated.pressure
+        title = (
+            f"{annotated.folder} - action {annotated.action} - frame "
+            f"{annotated.frame} - occurrence {annotated.occurrence}"
+        )
+    else:
+        frames = load_pressure_frames(args.input)
+        if not 0 <= args.frame < len(frames):
+            raise IndexError(f"frame must be between 0 and {len(frames) - 1}")
+        original = frames[args.frame]
+        title = f"{args.input.name} - frame {args.frame}"
     config = EnhancementConfig(gamma=args.gamma, strength=args.strength)
-    original = frames[args.frame]
     enhanced = enhance_pressure(original, config)
     save_comparison(
         original,
         enhanced,
         args.output,
-        title=f"{args.input.name} - frame {args.frame}",
+        title=title,
         display_floor_ratio=args.display_floor,
         minimum_component_size=args.min_display_component,
+        keypoints=annotated.keypoints if annotated is not None else None,
     )
     for key, value in enhancement_metrics(original, enhanced).items():
         print(f"{key}: {value:.4f}")
+    if annotated is not None:
+        for key, value in joint_guided_metrics(
+            original, enhanced, annotated.keypoints
+        ).items():
+            print(f"{key}: {value:.4f}")
     print(f"saved: {args.output.resolve()}")
 
 

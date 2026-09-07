@@ -168,44 +168,72 @@ try {
     `hand z=${supJoints['mixamorigRightHand'][2].toFixed(2)} shoulder z=${supJoints['mixamorigRightArm'][2].toFixed(2)} hand y=${supJoints['mixamorigRightHand'][1].toFixed(2)}`,
   );
 
-  // lateral: top leg folded (left-lateral top = right leg; right-lateral top = left leg)
-  const foldLTop = (latL.rHipAnkle as number) / ((latL.rThigh as number) + (latL.rShin as number));
-  const foldRTop = (latR.lHipAnkle as number) / ((latR.lThigh as number) + (latR.lShin as number));
-  const straightLBottom = (latL.lHipAnkle as number) / ((latL.lThigh as number) + (latL.lShin as number));
-  check('left-lateral top leg (right) bent', foldLTop < 0.9, `ratio=${foldLTop.toFixed(3)}`);
-  check('right-lateral top leg (left) bent', foldRTop < 0.9, `ratio=${foldRTop.toFixed(3)}`);
-  check('left-lateral bottom leg (left) near straight', straightLBottom > 0.9, `ratio=${straightLBottom.toFixed(3)}`);
+  // 侧卧：直腿（与仰卧/俯卧一致）
+  const latLStraight =
+    (latL.lHipAnkle as number) / ((latL.lThigh as number) + (latL.lShin as number)) > 0.95 &&
+    (latL.rHipAnkle as number) / ((latL.rThigh as number) + (latL.rShin as number)) > 0.95;
+  const latRStraight =
+    (latR.lHipAnkle as number) / ((latR.lThigh as number) + (latR.lShin as number)) > 0.95 &&
+    (latR.rHipAnkle as number) / ((latR.rThigh as number) + (latR.rShin as number)) > 0.95;
+  check(
+    'left-lateral legs straight (like supine/prone)',
+    latLStraight,
+    `L=${((latL.lHipAnkle as number) / ((latL.lThigh as number) + (latL.lShin as number))).toFixed(3)} R=${((latL.rHipAnkle as number) / ((latL.rThigh as number) + (latL.rShin as number))).toFixed(3)}`,
+  );
+  check(
+    'right-lateral legs straight (like supine/prone)',
+    latRStraight,
+    `L=${((latR.lHipAnkle as number) / ((latR.lThigh as number) + (latR.lShin as number))).toFixed(3)} R=${((latR.rHipAnkle as number) / ((latR.rThigh as number) + (latR.rShin as number))).toFixed(3)}`,
+  );
+
+  // ---- 比例对齐：人体关键部位 vs 权威气囊布局（2m 床，z 头→脚 -1..+1）----
+  // 肩背气囊带 z≈[-0.60,-0.52]；传感器区 z≈[-0.19,+0.33]；腿气囊带 z≈[+0.49,+0.58]
+  const shoulderZ = supJoints['mixamorigSpine2'][2];
+  const hipZ = supJoints['mixamorigHips'][2];
+  const footZ2 = supJoints['mixamorigRightFoot'][2];
+  const headZ2 = supJoints['mixamorigHead'][2];
+  check(
+    '肩/胸位于肩背气囊带附近（比例对齐）',
+    shoulderZ > -0.7 && shoulderZ < -0.42,
+    `胸 z=${shoulderZ.toFixed(2)}（肩背气囊带 z∈[-0.60,-0.52]）`,
+  );
+  check(
+    '髋部位于传感器区范围内（比例对齐）',
+    hipZ > -0.3 && hipZ < 0.25,
+    `髋 z=${hipZ.toFixed(2)}（传感器区 z∈[-0.19,+0.33]）`,
+  );
+  check(
+    '脚位于床尾侧、腿气囊带之后（比例对齐）',
+    footZ2 > 0.7 && footZ2 < 1.0,
+    `脚 z=${footZ2.toFixed(2)}（腿气囊带 z∈[+0.49,+0.58]，床尾 z=+1）`,
+  );
+  check(
+    '头位于床头侧（比例对齐；头关节在头顶下方约 0.2m）',
+    headZ2 < -0.5 && headZ2 > -0.85,
+    `头关节 z=${headZ2.toFixed(2)}（头顶 ≈ -0.89，床头 z=-1）`,
+  );
 
   // lateral bottom leg foot and bottom arm hand must not sink below mattress
   const latLJoints = latL.joints as Record<string, number[]>;
   const latRJoints = latR.joints as Record<string, number[]>;
-  const bottomFootOk = latLJoints['mixamorigLeftFoot'][1] > 0.05;
-  const bottomHandOk = latLJoints['mixamorigLeftHand'][1] > 0.05;
+  const bottomFootOk = latLJoints['mixamorigLeftFoot'][1] > 0.0;
+  const bottomHandOk = latLJoints['mixamorigLeftHand'][1] > 0.0;
   const topFootOk =
-    latLJoints['mixamorigRightFoot'][1] > 0.1 && latRJoints['mixamorigLeftFoot'][1] > 0.1;
+    latLJoints['mixamorigRightFoot'][1] > 0.0 && latRJoints['mixamorigLeftFoot'][1] > 0.0;
   check(
     'left-lateral bottom foot not sunk',
     bottomFootOk,
-    `foot y=${latLJoints['mixamorigLeftFoot'][1].toFixed(2)} (want >0.05)`,
+    `foot y=${latLJoints['mixamorigLeftFoot'][1].toFixed(2)} (want >0)`,
   );
   check(
     'left-lateral bottom hand not sunk',
     bottomHandOk,
-    `hand y=${latLJoints['mixamorigLeftHand'][1].toFixed(2)} (want >0.05)`,
+    `hand y=${latLJoints['mixamorigLeftHand'][1].toFixed(2)} (want >0)`,
   );
   check(
-    'lateral top foot rests above mattress (no penetration)',
+    'lateral feet above mattress level (no penetration)',
     topFootOk,
-    `left: ${latLJoints['mixamorigRightFoot'][1].toFixed(2)} / right: ${latRJoints['mixamorigLeftFoot'][1].toFixed(2)} (want >0.1)`,
-  );
-
-  // 侧卧上腿膝盖应抬离床面（胎儿式屈髋抬膝）
-  const kneeLiftL = latLJoints['mixamorigRightLeg'][1] - latLJoints['mixamorigRightUpLeg'][1];
-  const kneeLiftR = latRJoints['mixamorigLeftLeg'][1] - latRJoints['mixamorigLeftUpLeg'][1];
-  check(
-    'lateral top knee raised (fetal curl visible)',
-    kneeLiftL > 0.1 && kneeLiftR > 0.1,
-    `left: kneeLift=${kneeLiftL.toFixed(2)} / right: kneeLift=${kneeLiftR.toFixed(2)} (want >0.1)`,
+    `left: ${latLJoints['mixamorigRightFoot'][1].toFixed(2)} / right: ${latRJoints['mixamorigLeftFoot'][1].toFixed(2)} (want >0)`,
   );
 
   // head toward the far end (-Z)

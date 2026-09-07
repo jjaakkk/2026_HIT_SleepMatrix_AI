@@ -31,7 +31,8 @@ const MATTRESS_WID = 1.8; // x 方向（仰卧者左→右）
 const MATTRESS_THK = 0.16;
 const CELL_PX = 4; // 纹理每格像素（画布 96×176）
 const AUTO_SCALE_MIN = 80;
-const FIGURE_LEN = 1.72; // 人体身高（米），小于床垫长度
+// 人体身高（米）：与热力图数据中人体跨度（44 行中约 38 行 ≈ 1.73m）及 2m 床匹配
+const FIGURE_LEN = 1.75;
 
 interface BonePose {
   x?: number;
@@ -68,29 +69,10 @@ const LIMB_POSES: Record<PostureId, Record<string, BonePose>> = {
   0: { ...ARMS_DOWN },
   // 俯卧：头转向一侧
   1: { ...ARMS_DOWN, mixamorigHead: { y: 0.7 } },
-  // 左侧卧（左半身贴床，上腿=右腿）：下腿微屈、上腿屈髋+外展抬膝+屈膝（胎儿式，
-  // 实测 hipX=1.0/hipZ=0.5/kneeX=1.0：膝盖抬 0.20、脚悬垂 y=0.81、fold=0.84）
-  2: {
-    ...ARMS_DOWN,
-    mixamorigLeftArm: { z: 1.35, x: 0.55 },
-    mixamorigRightArm: { z: 1.35, x: 0.45 },
-    mixamorigHead: { y: 0.15 },
-    mixamorigLeftUpLeg: { x: 0.35 },
-    mixamorigLeftLeg: { x: 0.5 },
-    mixamorigRightUpLeg: { x: 1.0, z: 0.5 },
-    mixamorigRightLeg: { x: 1.0 },
-  },
-  // 右侧卧（右半身贴床，上腿=左腿）：镜像（髋 z 反号）
-  3: {
-    ...ARMS_DOWN,
-    mixamorigLeftArm: { z: 1.35, x: 0.45 },
-    mixamorigRightArm: { z: 1.35, x: 0.55 },
-    mixamorigHead: { y: -0.15 },
-    mixamorigLeftUpLeg: { x: 1.0, z: -0.5 },
-    mixamorigLeftLeg: { x: 1.0 },
-    mixamorigRightUpLeg: { x: 0.35 },
-    mixamorigRightLeg: { x: 0.5 },
-  },
+  // 左侧卧：仅整体翻滚，肢体与仰卧/俯卧一致（直腿、手臂贴体侧）
+  2: { ...ARMS_DOWN },
+  // 右侧卧：同上（镜像翻滚）
+  3: { ...ARMS_DOWN },
 };
 
 export interface Bed3DOptions {

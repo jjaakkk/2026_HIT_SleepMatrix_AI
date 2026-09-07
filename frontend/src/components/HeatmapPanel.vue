@@ -22,7 +22,7 @@ const props = defineProps<{
   showSpine: boolean;
   showCalf: boolean;
   selectedRegion: number | null;
-  /** 身体分区推理掩码（44×24 六类分割，仅推理接入模式非空） */
+  /** 身体分区推理掩码（44×24 六类分割，仅实时推理模式非空） */
   partitionMask?: number[][] | null;
   /** 区域来源：模型推理 | 记录标注 | 无区域 */
   regionSource?: 'inference' | 'annotation' | null;

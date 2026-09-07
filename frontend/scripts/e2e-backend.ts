@@ -112,13 +112,14 @@ check(
 check('analyze 增强模块返回结果', enhanceOk, JSON.stringify(analyzeBody.enhanced ?? {}));
 
 // ---- UI 层检查 ----
+// 数据模式语义（frontend/src/composables/useFrameInference.ts）：
+//   实时推理（默认）：动态翻身序列作为模拟实时流循环播放，/api/frame/analyze 逐帧分析驱动界面；
+//   离线回放：播放预存数据，仅此模式显示 数据源/回放/受测者/姿态记录 选择器，用记录标签与标注渲染。
 const browser = await puppeteer.launch({ headless: 'shell' });
 try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1600, height: 1000 });
-  await page.goto(`${BASE}?c=e2e#type=static&person=SAI&action=1&frame=10`, {
-    waitUntil: 'networkidle0',
-  });
+  await page.goto(`${BASE}?c=e2e#display=inference`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('canvas');
   await sleep(1500); // 等待健康探测完成
 
@@ -128,15 +129,27 @@ try {
   check('侧栏状态显示「算法服务在线」', badges.some((t) => t?.includes('算法服务在线')), JSON.stringify(badges));
   check('契约版本不一致警告未出现', !badges.some((t) => t?.includes('契约版本不一致')));
 
-  // 默认数据模式 = 推理接入
+  // 默认数据模式 = 实时推理
   const segState = await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.seg button')] as HTMLButtonElement[];
-    const b = btns.find((x) => x.textContent?.includes('推理接入'));
+    const b = btns.find((x) => x.textContent?.includes('实时推理'));
     return b ? { disabled: b.disabled, pressed: b.getAttribute('aria-pressed') } : null;
   });
-  check('默认数据模式为「推理接入」', segState?.pressed === 'true' && segState?.disabled === false, JSON.stringify(segState));
+  check('默认数据模式为「实时推理」', segState?.pressed === 'true' && segState?.disabled === false, JSON.stringify(segState));
 
-  await sleep(2000); // 等待逐帧分析（350ms 节流 + 网络往返）完成
+  // 实时推理模式下不显示离线回放选择器
+  const realtimeSidebar = await page.evaluate(() => document.querySelector('.col-left')?.textContent ?? '');
+  check(
+    '实时推理模式隐藏「数据源/回放」选择器',
+    !realtimeSidebar.includes('数据源') && !realtimeSidebar.includes('姿态动作'),
+  );
+  // 模拟实时流自动播放
+  const frameBefore = await page.$eval('.frame-num', (el) => el.textContent?.trim() ?? '');
+  await sleep(1200);
+  const frameAfter = await page.$eval('.frame-num', (el) => el.textContent?.trim() ?? '');
+  check('实时推理模式模拟流自动播放（帧号推进）', frameBefore !== frameAfter, `${frameBefore} → ${frameAfter}`);
+
+  await sleep(1500); // 等待逐帧分析（350ms 节流 + 网络往返）完成
 
   // 分区模型就绪 → 热力图区域与掩码应来自模型推理
   const partitionUi = await page.evaluate(() => ({
@@ -166,34 +179,57 @@ try {
     );
   }
 
-  // 切换到数据展示模式：区域回退记录标注
+  // 切换到离线回放模式：回放选择器出现、区域回退记录标注、掩码移除
   await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.seg button')] as HTMLElement[];
-    btns.find((x) => x.textContent?.includes('数据展示'))?.click();
+    btns.find((x) => x.textContent?.includes('离线回放'))?.click();
   });
   await sleep(500);
   const demoUi = await page.evaluate(() => ({
+    sidebar: document.querySelector('.col-left')?.textContent ?? '',
     chip: [...document.querySelectorAll('.region-source-chip')].map((e) => e.textContent?.trim()),
     maskCells: document.querySelectorAll('.partition-mask rect').length,
   }));
   check(
-    '数据展示模式：分区掩码移除、来源回退「记录标注」',
-    demoUi.maskCells === 0 && demoUi.chip.includes('区域 · 记录标注'),
-    JSON.stringify(demoUi),
+    '离线回放模式：回放选择器出现、掩码移除、来源回退「记录标注」',
+    demoUi.sidebar.includes('数据源') &&
+      demoUi.sidebar.includes('姿态动作') &&
+      demoUi.maskCells === 0 &&
+      demoUi.chip.includes('区域 · 记录标注'),
+    JSON.stringify({ ...demoUi, sidebar: demoUi.sidebar.slice(0, 80) }),
   );
 
-  // 切回推理接入（按钮恢复可用性）
+  // 切回实时推理（按钮恢复可用性）
   await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.seg button')] as HTMLElement[];
-    btns.find((x) => x.textContent?.includes('推理接入'))?.click();
+    btns.find((x) => x.textContent?.includes('实时推理'))?.click();
   });
   await sleep(300);
   const backState = await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.seg button')] as HTMLButtonElement[];
-    const b = btns.find((x) => x.textContent?.includes('推理接入'));
+    const b = btns.find((x) => x.textContent?.includes('实时推理'));
     return b?.getAttribute('aria-pressed');
   });
-  check('可切回「推理接入」模式', backState === 'true', String(backState));
+  check('可切回「实时推理」模式', backState === 'true', String(backState));
+
+  // 带回放参数的演示直链隐含「离线回放」模式
+  await page.goto(`${BASE}?c=e2e-playback#type=static&person=SAI&action=1&frame=10`, {
+    waitUntil: 'networkidle0',
+  });
+  await page.waitForSelector('canvas');
+  await sleep(1500);
+  const playbackState = await page.evaluate(() => ({
+    demoPressed: [...document.querySelectorAll('.seg button')].find(
+      (b) => b.textContent?.includes('离线回放'),
+    )?.getAttribute('aria-pressed'),
+    pose: document.querySelector('.pose-card .pose-name')?.textContent?.trim(),
+    chip: [...document.querySelectorAll('.region-source-chip')].map((e) => e.textContent?.trim()),
+  }));
+  check(
+    '回放参数直链进入「离线回放」（睡姿卡=记录标签）',
+    playbackState.demoPressed === 'true' && playbackState.pose === '仰卧',
+    JSON.stringify(playbackState),
+  );
 } finally {
   await browser.close();
 }

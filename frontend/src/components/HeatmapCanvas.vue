@@ -29,7 +29,7 @@ const props = defineProps<{
   /** 小腿部仅在 SAI/dgs/gzy 有标注，默认不显示 */
   showCalf?: boolean;
   selectedRegion?: number | null;
-  /** 身体分区推理掩码（44×24，1肩 2背 3腰 4臀 5大腿；推理接入模式） */
+  /** 身体分区推理掩码（44×24，1肩 2背 3腰 4臀 5大腿；实时推理模式） */
   partitionMask?: number[][] | null;
   /** 布置图传感器叠加层开关 */
   showSensors?: boolean;
@@ -138,7 +138,7 @@ const PARTITION_CLASS_COLORS: Record<number, string> = {
   5: REGION_COLORS['大腿部'],
 };
 
-/** 分区掩码覆盖层（推理接入模式：非零像素按类别着色，半透明叠加于热力图） */
+/** 分区掩码覆盖层（实时推理模式：非零像素按类别着色，半透明叠加于热力图） */
 interface MaskCell {
   x: number;
   y: number;

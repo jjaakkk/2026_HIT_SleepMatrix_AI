@@ -2,15 +2,15 @@
  * 单帧聚合推理组合式函数：后端服务生命周期 + 节流逐帧分析 + 分模块降级。
  *
  * 行为约定：
- * - 默认数据模式 = 推理接入（displayMode='inference'）：逐帧调用
+ * - 默认数据模式 = 实时推理（displayMode='inference'）：逐帧调用
  *   POST /api/frame/analyze（睡姿 + 身体分区 + 弱区增强一次返回）；
  * - init() 探测 /api/health 与 /api/contracts/posture；离线时每 15s 静默重试，
- *   后端起服后自动恢复在线（推理接入模式自动开始工作）；
+ *   后端起服后自动恢复在线（实时推理模式自动开始工作）；
  * - 分析请求 latest-wins（新帧到达即中止旧请求），350ms 节流；
  * - 后端对不可用模块返回模块级错误对象（HTTP 200）：仅降级对应模块
  *   （如睡姿模型缺失 → 睡姿回退记录标签，但分区/增强继续用推理结果）；
  * - 连续 3 次传输级失败（网络/超时/5xx）→ 后端标记离线并定时重连，
- *   期间全部模块回退数据展示。
+ *   期间全部模块回退离线回放。
  */
 import { onScopeDispose, ref } from 'vue';
 import {
@@ -28,7 +28,7 @@ import {
 } from '../core/frame-inference.ts';
 
 export type BackendState = 'checking' | 'online' | 'offline';
-/** 数据模式：推理接入（默认，模型结果驱动界面）| 数据展示（记录标签与标注） */
+/** 数据模式：实时推理（默认，模型结果驱动界面）| 离线回放（记录标签与标注） */
 export type DisplayMode = 'inference' | 'demo';
 
 const HEALTH_RETRY_MS = 15000;
@@ -38,7 +38,7 @@ const TRANSPORT_FAIL_LIMIT = 3;
 
 export function useFrameInference() {
   const backend = ref<BackendState>('checking');
-  /** 默认推理接入：模型就位后开箱即运转；不可用时按模块回退记录数据 */
+  /** 默认实时推理：模型就位后开箱即运转；不可用时按模块回退记录数据 */
   const displayMode = ref<DisplayMode>('inference');
 
   const postureModelAvailable = ref(false);

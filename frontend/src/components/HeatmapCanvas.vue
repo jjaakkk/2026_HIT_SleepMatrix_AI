@@ -29,6 +29,8 @@ const props = defineProps<{
   /** 小腿部仅在 SAI/dgs/gzy 有标注，默认不显示 */
   showCalf?: boolean;
   selectedRegion?: number | null;
+  /** 身体分区推理掩码（44×24，1肩 2背 3腰 4臀 5大腿；推理接入模式） */
+  partitionMask?: number[][] | null;
   /** 布置图传感器叠加层开关 */
   showSensors?: boolean;
   /** 气囊实时状态（模拟源）：充气 → 对应传感器点增强（支撑效果模拟联动） */
@@ -125,6 +127,41 @@ const regionRects = computed(() => {
         active: hoverRegion.value === index || props.selectedRegion === index,
       };
     });
+});
+
+// 分区掩码类色（class_id 1..5 → 肩/背/腰/臀/大腿，与 REGION_COLORS 对齐）
+const PARTITION_CLASS_COLORS: Record<number, string> = {
+  1: REGION_COLORS['肩部'],
+  2: REGION_COLORS['背部'],
+  3: REGION_COLORS['腰部'],
+  4: REGION_COLORS['臀部'],
+  5: REGION_COLORS['大腿部'],
+};
+
+/** 分区掩码覆盖层（推理接入模式：非零像素按类别着色，半透明叠加于热力图） */
+interface MaskCell {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: string;
+}
+const partitionMaskCells = computed<MaskCell[]>(() => {
+  if (!props.partitionMask || !props.showRegions || cssWidth.value === 0) return [];
+  const cw = cssWidth.value / COLS;
+  const ch = cssHeight.value / ROWS;
+  const cells: MaskCell[] = [];
+  for (let r = 0; r < ROWS; r++) {
+    const row: number[] | undefined = props.partitionMask[r];
+    if (!row) continue;
+    for (let c = 0; c < COLS; c++) {
+      const cls = row[c] ?? 0;
+      const color = PARTITION_CLASS_COLORS[cls];
+      if (!color) continue;
+      cells.push({ x: c * cw, y: r * ch, w: cw + 0.6, h: ch + 0.6, color });
+    }
+  }
+  return cells;
 });
 
 const spinePx = computed(() => {
@@ -241,11 +278,25 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize));
   <div class="heatmap-wrap" @mousemove="onMove" @mouseleave="onLeave">
     <canvas ref="canvasRef" :style="{ width: cssWidth + 'px', height: cssHeight + 'px' }" />
     <svg
-      v-if="regionRects.length || spinePx.length"
+      v-if="regionRects.length || spinePx.length || partitionMaskCells.length"
       class="overlay"
       :width="cssWidth"
       :height="cssHeight"
     >
+      <g v-if="partitionMaskCells.length" class="partition-mask" pointer-events="none">
+        <rect
+          v-for="(cell, i) in partitionMaskCells"
+          :key="i"
+          :x="cell.x"
+          :y="cell.y"
+          :width="cell.w"
+          :height="cell.h"
+          :fill="cell.color"
+          fill-opacity="0.22"
+          stroke="rgba(13,17,23,0.35)"
+          stroke-width="0.5"
+        />
+      </g>
       <g v-if="spinePx.length && spinePath" class="spine">
         <path
           :d="spinePath"

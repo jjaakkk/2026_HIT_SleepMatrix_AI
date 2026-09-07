@@ -1,6 +1,10 @@
 // 前后端端到端联调：npm run e2e:backend
-// 前置：后端已启动（dev/arch 的 backend/app.py，127.0.0.1:5000）+ 前端 preview（4173）。
+// 前置：后端已启动（backend/app.py，127.0.0.1:5000）+ 前端 preview（4173）。
 // 后端不可达时跳过（退出码 0），由 audit:ui 覆盖离线降级路径。
+//
+// 数据模式语义（frontend/src/composables/useFrameInference.ts）：
+//   推理接入（默认）：/api/frame/analyze 逐帧分析（睡姿+分区+增强），结果驱动界面；
+//   数据展示：记录标签与标注渲染。
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -22,11 +26,16 @@ function check(name: string, pass: boolean, detail = '') {
 }
 
 // ---- 前置：后端可达性 ----
-let health: { status: string; posture_svm: { model_available: boolean } };
+interface HealthInfo {
+  status: string;
+  posture_svm: { model_available: boolean };
+  models: { body_partition: { model_available: boolean } };
+}
+let health: HealthInfo;
 try {
   const res = await fetch(`${API}/api/health`, { signal: AbortSignal.timeout(3000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  health = (await res.json()) as typeof health;
+  health = (await res.json()) as HealthInfo;
 } catch (e) {
   console.log(`⊙ 后端未启动（${e instanceof Error ? e.message : e}），跳过端到端联调；离线路径由 audit:ui 覆盖`);
   process.exit(0);
@@ -76,6 +85,32 @@ if (health.posture_svm.model_available) {
   );
 }
 
+// ---- 聚合分析端点：分区/增强应可用，睡姿按模型状态 ----
+const analyzeRes = await fetch(`${API}/api/frame/analyze`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    pressure_matrix: Array.from({ length: 44 }, () => new Array(24).fill(40)),
+    features: ['posture', 'partition', 'enhance'],
+    model: 'ensemble',
+  }),
+});
+check('/api/frame/analyze 返回 200', analyzeRes.ok, `HTTP ${analyzeRes.status}`);
+const analyzeBody = (await analyzeRes.json()) as {
+  posture?: Record<string, unknown>;
+  partition?: Record<string, unknown>;
+  enhanced?: Record<string, unknown>;
+};
+const partitionOk = analyzeBody.partition !== undefined && !('error' in analyzeBody.partition);
+const postureOk = analyzeBody.posture !== undefined && !('error' in analyzeBody.posture);
+const enhanceOk = analyzeBody.enhanced !== undefined && !('error' in analyzeBody.enhanced);
+check(
+  'analyze 分区模块返回结果',
+  partitionOk === health.models.body_partition.model_available,
+  JSON.stringify({ partitionOk, expected: health.models.body_partition.model_available }),
+);
+check('analyze 增强模块返回结果', enhanceOk, JSON.stringify(analyzeBody.enhanced ?? {}));
+
 // ---- UI 层检查 ----
 const browser = await puppeteer.launch({ headless: 'shell' });
 try {
@@ -93,44 +128,72 @@ try {
   check('侧栏状态显示「算法服务在线」', badges.some((t) => t?.includes('算法服务在线')), JSON.stringify(badges));
   check('契约版本不一致警告未出现', !badges.some((t) => t?.includes('契约版本不一致')));
 
-  const svmState = await page.evaluate(() => {
+  // 默认数据模式 = 推理接入
+  const segState = await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.seg button')] as HTMLButtonElement[];
-    const b = btns.find((x) => x.textContent?.includes('SVM 推理'));
+    const b = btns.find((x) => x.textContent?.includes('推理接入'));
     return b ? { disabled: b.disabled, pressed: b.getAttribute('aria-pressed') } : null;
   });
-  check('后端在线时 SVM 推理选项可用', svmState?.disabled === false, JSON.stringify(svmState));
+  check('默认数据模式为「推理接入」', segState?.pressed === 'true' && segState?.disabled === false, JSON.stringify(segState));
 
-  // 切换到 SVM 推理
-  await page.evaluate(() => {
-    const btns = [...document.querySelectorAll('.seg button')] as HTMLElement[];
-    btns.find((x) => x.textContent?.includes('SVM 推理'))?.click();
-  });
-  await sleep(800);
-  const srcBadge = await page.evaluate(() => document.querySelector('.pose-card .src-badge')?.textContent?.trim());
-  check('睡姿卡显示识别来源徽章', !!srcBadge, String(srcBadge));
+  await sleep(2000); // 等待逐帧分析（350ms 节流 + 网络往返）完成
 
-  if (!health.posture_svm.model_available) {
-    // 模型缺失：连续换帧触发 3 次失败 → 自动降级回记录标签
-    for (let i = 0; i < 3; i++) {
-      await page.evaluate(() => {
-        const btns = [...document.querySelectorAll('.transport .ctl')] as HTMLElement[];
-        btns[2]?.click(); // 下一帧
-      });
-      await sleep(700);
-    }
-    await sleep(500);
-    const after = await page.evaluate(() => ({
-      badges: [...document.querySelectorAll('.status-list .status-row')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim()),
-      activePoseSource: [...document.querySelectorAll('.seg button')].find(
-        (b) => b.getAttribute('aria-pressed') === 'true' && b.textContent?.includes('SVM 推理'),
-      )?.textContent?.trim(),
-    }));
+  // 分区模型就绪 → 热力图区域与掩码应来自模型推理
+  const partitionUi = await page.evaluate(() => ({
+    chip: [...document.querySelectorAll('.region-source-chip')].map((e) => e.textContent?.trim()),
+    maskCells: document.querySelectorAll('.partition-mask rect').length,
+    regionRects: document.querySelectorAll('.overlay .region').length,
+  }));
+  if (health.models.body_partition.model_available) {
     check(
-      '连续推理失败后自动降级（徽章回退未连接 + 切回记录标签）',
-      after.badges.some((t) => t?.includes('未连接')) && after.activePoseSource === undefined,
-      JSON.stringify(after),
+      '分区推理驱动热力图：掩码覆盖层与区域矩形存在',
+      partitionUi.maskCells > 0 && partitionUi.regionRects > 0,
+      JSON.stringify(partitionUi),
+    );
+    check('区域来源徽章显示「模型推理」', partitionUi.chip.includes('区域 · 模型推理'), JSON.stringify(partitionUi));
+  }
+
+  // 睡姿卡：模型可用 → 模型推理徽章；缺失 → 回退记录标签
+  const poseNote = await page.evaluate(() => document.querySelector('.pose-card .note')?.textContent?.trim() ?? '');
+  if (health.posture_svm.model_available) {
+    const srcBadge = await page.evaluate(() => document.querySelector('.pose-card .src-badge')?.textContent?.trim());
+    check('睡姿卡显示「模型推理」来源徽章', srcBadge === '模型推理', String(srcBadge));
+  } else {
+    check(
+      '睡姿模型缺失 → 睡姿卡回退记录标签',
+      poseNote.includes('睡姿模型不可用') && poseNote.includes('记录标签'),
+      String(poseNote),
     );
   }
+
+  // 切换到数据展示模式：区域回退记录标注
+  await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.seg button')] as HTMLElement[];
+    btns.find((x) => x.textContent?.includes('数据展示'))?.click();
+  });
+  await sleep(500);
+  const demoUi = await page.evaluate(() => ({
+    chip: [...document.querySelectorAll('.region-source-chip')].map((e) => e.textContent?.trim()),
+    maskCells: document.querySelectorAll('.partition-mask rect').length,
+  }));
+  check(
+    '数据展示模式：分区掩码移除、来源回退「记录标注」',
+    demoUi.maskCells === 0 && demoUi.chip.includes('区域 · 记录标注'),
+    JSON.stringify(demoUi),
+  );
+
+  // 切回推理接入（按钮恢复可用性）
+  await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.seg button')] as HTMLElement[];
+    btns.find((x) => x.textContent?.includes('推理接入'))?.click();
+  });
+  await sleep(300);
+  const backState = await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.seg button')] as HTMLButtonElement[];
+    const b = btns.find((x) => x.textContent?.includes('推理接入'));
+    return b?.getAttribute('aria-pressed');
+  });
+  check('可切回「推理接入」模式', backState === 'true', String(backState));
 } finally {
   await browser.close();
 }

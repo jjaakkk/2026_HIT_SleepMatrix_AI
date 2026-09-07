@@ -21,7 +21,8 @@ import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stat
 import { PlaybackController } from './core/playback.ts';
 import { SimulatedAirbagSource, type AirbagState } from './core/airbag.ts';
 import { generateSimulatedDataset } from './core/simulate.ts';
-import { usePostureInference } from './composables/usePostureInference.ts';
+import { useFrameInference } from './composables/useFrameInference.ts';
+import { partitionRegionsToBodyRegions } from './core/frame-inference.ts';
 import { SENSOR_BY_ID, mmToMatrixCell } from './core/airbag-layout.ts';
 
 // 缩放适配：固定 1920×1080 设计空间，任意分辨率整体等比缩放（零滚动零溢出）
@@ -142,13 +143,17 @@ const currentFrame = computed(
       : currentAction.value?.frames[frameIdx.value]) ?? new Float32Array(0),
 );
 
-// 显示帧 = 扣除该人空载背景后的净压力（背景噪声在热力图上自然归零，"离床"画面即全黑）
+// 显示帧 = 推理接入模式优先使用后端弱区增强矩阵，否则使用扣除该人空载背景后的净压力
+// （背景噪声在热力图上自然归零，"离床"画面即全黑）
 const displayFrame = computed(() => {
-  const raw = currentFrame.value;
   const bg = bgForMetrics.value;
-  if (!bg) return raw;
-  const out = new Float32Array(raw.length);
-  for (let i = 0; i < raw.length; i++) out[i] = Math.max(raw[i] - bg[i], 0);
+  const src =
+    inference.displayMode.value === 'inference' && inference.enhancedFrame.value
+      ? inference.enhancedFrame.value
+      : currentFrame.value;
+  if (!bg) return src;
+  const out = new Float32Array(src.length);
+  for (let i = 0; i < src.length; i++) out[i] = Math.max(src[i] - bg[i], 0);
   return out;
 });
 
@@ -170,12 +175,28 @@ const bgForMetrics = computed<ArrayLike<number> | null>(() =>
 );
 const history = computed(() => metricsHistory(framesList.value, bgForMetrics.value, 20));
 
-// 区域与脊柱标注
-const regions = computed(() =>
-  sourceType.value === 'static' && currentAction.value?.region
+// 区域：推理接入模式优先用 body_partition 推理区域，否则用记录标注
+const regions = computed(() => {
+  if (inference.displayMode.value === 'inference' && inference.partition.value) {
+    return partitionRegionsToBodyRegions(inference.partition.value);
+  }
+  return sourceType.value === 'static' && currentAction.value?.region
     ? parseRegion(currentAction.value.region)
+    : null;
+});
+/** 分区掩码覆盖层（仅推理接入模式） */
+const partitionMask = computed(() =>
+  inference.displayMode.value === 'inference' && inference.partition.value
+    ? inference.partition.value.mask
     : null,
 );
+/** 区域来源：inference（模型分区）| annotation（记录标注）| null（无区域） */
+const regionSource = computed<'inference' | 'annotation' | null>(() => {
+  if (!regions.value) return null;
+  return inference.displayMode.value === 'inference' && inference.partitionAvailable.value
+    ? 'inference'
+    : 'annotation';
+});
 const spine = computed(() =>
   sourceType.value === 'static' && currentAction.value?.spine
     ? parseSpine(currentAction.value.spine)
@@ -192,7 +213,12 @@ const selectedRegion = ref<number | null>(null);
 const show3D = ref(false);
 /** 中下方面板视图：3D 演示持久展示，压力曲线按按钮切换 */
 const viewMode = ref<'3d' | 'chart'>('3d');
+// 3D 人体姿势：推理接入模式优先用模型推理结果，否则用记录标签
 const sleepPos3d = computed(() => {
+  if (inference.displayMode.value === 'inference' && inference.prediction.value) {
+    const id = inference.prediction.value.label_id;
+    if (id >= 0 && id <= 3) return id as 0 | 1 | 2 | 3;
+  }
   const p = currentAction.value?.sleepPos;
   return typeof p === 'number' && p >= 0 && p <= 3 ? p : 0;
 });
@@ -271,18 +297,21 @@ const selectedRegionColor = computed(() => {
   return rg?.valid ? (REGION_COLORS[rg.name] ?? '#8b8f98') : '#8b8f98';
 });
 
-// 睡姿推理（架构：通过 HTTP API 获取算法结果；离线时回退记录标签）
-const inference = usePostureInference();
+// 单帧聚合推理（架构：通过 HTTP API 获取算法结果；推理接入为默认模式，离线/缺模型时按模块回退记录数据）
+const inference = useFrameInference();
 const displayPose = computed(() => {
-  if (inference.poseSource.value === 'inference' && inference.prediction.value) {
+  if (inference.displayMode.value === 'inference' && inference.prediction.value) {
     return inference.prediction.value.label_zh;
   }
   return sleepPosName.value;
 });
 const poseNote = computed(() => {
-  if (inference.poseSource.value === 'inference') {
-    if (inference.backend.value === 'online') return 'SVM 逐帧推理 · POST /api/posture/predict';
-    return '后端离线 · 已回退记录标签';
+  if (inference.displayMode.value === 'inference') {
+    if (inference.prediction.value) {
+      return `${inference.postureModelAvailable.value ? '模型推理' : '推理'} · POST /api/frame/analyze`;
+    }
+    if (inference.backend.value === 'offline') return '后端离线 · 已回退记录标签';
+    return '睡姿模型不可用 · 已回退记录标签';
   }
   return sourceType.value === 'dynamic'
     ? '翻身过程 · 未使用文件内标签'
@@ -380,7 +409,11 @@ function applyHash() {
     if (!Number.isNaN(f)) controller.value?.seek(f);
   }
   if (h.get('autoplay') === '1') controller.value?.play();
-  if (h.get('pose') === 'svm') inference.setPoseSource('inference');
+  // 兼容旧演示直链：#pose=svm → 推理接入；#pose=label → 数据展示
+  if (h.get('pose') === 'svm') inference.setDisplayMode('inference');
+  if (h.get('pose') === 'label') inference.setDisplayMode('demo');
+  const dmRaw = h.get('display');
+  if (dmRaw === 'inference' || dmRaw === 'demo') inference.setDisplayMode(dmRaw);
 }
 
 const legendTicks = computed<number[] | null>(() => {
@@ -418,10 +451,10 @@ watch([sourceType, actionIdx, personIdx], () => {
   selectedSensor.value = null;
 });
 
-// 推理触发：帧号 / 来源 / 后端状态变化时队列化当前帧（组合式函数内部节流 + latest-wins）
+// 推理触发：帧号 / 数据模式 / 后端状态变化时队列化当前帧（组合式函数内部节流 + latest-wins）
 watch(
-  [frameIdx, () => inference.poseSource.value, () => inference.backend.value],
-  () => inference.queueInference(currentFrame.value),
+  [frameIdx, () => inference.displayMode.value, () => inference.backend.value],
+  () => inference.queueAnalyze(currentFrame.value),
 );
 </script>
 
@@ -443,10 +476,11 @@ watch(
                 :show-spine="showSpine"
                 :show-calf="showCalf"
                 :show-dyn-labels="showDynLabels"
-                :pose-source="inference.poseSource.value"
+                :display-mode="inference.displayMode.value"
                 :backend-online="inference.backend.value === 'online'"
                 :backend-state="inference.backend.value"
-                :model-available="inference.modelAvailable.value"
+                :model-available="inference.postureModelAvailable.value"
+                :partition-model-available="inference.partitionModelAvailable.value"
                 :contract-mismatch="inference.contractMismatch.value"
                 :simulated="dataSource === 'simulated'"
                 @update:data-source="selectDataSource"
@@ -457,7 +491,7 @@ watch(
                 @update:show-spine="showSpine = $event"
                 @update:show-calf="showCalf = $event"
                 @update:show-dyn-labels="showDynLabels = $event"
-                @update:pose-source="inference.setPoseSource($event)"
+                @update:display-mode="inference.setDisplayMode($event)"
                 @open-3d="show3D = true"
               />
             </aside>
@@ -474,6 +508,8 @@ watch(
                 :show-spine="showSpine"
                 :show-calf="showCalf"
                 :selected-region="selectedRegion"
+                :partition-mask="partitionMask"
+                :region-source="regionSource"
                 :source-label="sourceLabel"
                 :frame-idx="frameIdx"
                 :frame-count="frameCount"
@@ -559,9 +595,9 @@ watch(
                 :duration-frames="poseDurationFrames"
                 :pose-note="poseNote"
                 :playing="playing"
-                :pose-source="inference.poseSource.value"
+                :pose-source="inference.displayMode.value === 'inference' && inference.prediction.value ? 'inference' : 'label'"
                 :confidence="inference.prediction.value?.confidence ?? null"
-                :predicting="inference.predicting.value"
+                :predicting="inference.analyzing.value"
                 :metrics="metrics"
                 :history="history"
               />

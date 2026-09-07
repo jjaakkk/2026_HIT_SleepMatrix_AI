@@ -22,6 +22,10 @@ const props = defineProps<{
   showSpine: boolean;
   showCalf: boolean;
   selectedRegion: number | null;
+  /** 身体分区推理掩码（44×24 六类分割，仅推理接入模式非空） */
+  partitionMask?: number[][] | null;
+  /** 区域来源：模型推理 | 记录标注 | 无区域 */
+  regionSource?: 'inference' | 'annotation' | null;
   sourceLabel: string;
   frameIdx: number;
   frameCount: number;
@@ -120,6 +124,9 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
         <span class="src-label">{{ sourceLabel }}</span>
       </div>
       <div class="head-right">
+        <span v-if="regionSource && showRegions" class="region-source-chip" :class="{ inference: regionSource === 'inference' }">
+          {{ regionSource === 'inference' ? '区域 · 模型推理' : '区域 · 记录标注' }}
+        </span>
         <span class="mode-chip">{{ modeLabel }}</span>
         <span class="frame-num num">{{ String(frameIdx).padStart(2, '0') }} / {{ frameCount - 1 }}</span>
       </div>
@@ -169,6 +176,7 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
         :show-spine="showSpine"
         :show-calf="showCalf"
         :selected-region="selectedRegion"
+        :partition-mask="partitionMask"
         :show-sensors="showSensors"
         :airbag-states="airbagStates"
         :selected-sensor="selectedSensor"
@@ -296,6 +304,20 @@ const scaleOptions: { value: ScaleMode; label: string; title?: string }[] = [
   border-radius: var(--r-pill);
   padding: 2px 9px;
   white-space: nowrap;
+}
+.region-source-chip {
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--r-pill);
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.region-source-chip.inference {
+  color: var(--accent);
+  border-color: var(--accent-soft-strong);
+  background: var(--accent-soft);
 }
 .frame-num {
   font-size: var(--fs-xs);

@@ -18,6 +18,7 @@ __pycache__/
 # frontend 生成物（Vite）
 frontend/node_modules
 frontend/dist
+frontend/.vite
 frontend/*.local
 frontend/.DS_Store
 frontend/*.log

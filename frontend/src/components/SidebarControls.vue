@@ -40,6 +40,7 @@ const emit = defineEmits<{
   'update:showCalf': [v: boolean];
   'update:showDynLabels': [v: boolean];
   'update:poseSource': [v: 'label' | 'inference'];
+  open3d: [];
 }>();
 
 function actionLabel(a: DemoAction): string {
@@ -230,6 +231,14 @@ function toggleLayer(key: LayerDef['key']) {
       </div>
     </section>
 
+    <section class="group">
+      <h4 class="group-title"><Icon name="cube" :size="11" />三维演示</h4>
+      <button type="button" class="d3-open" title="打开全屏 3D 睡姿视图（人体模型 + 床垫热力图）" @click="emit('open3d')">
+        <Icon name="cube" :size="13" />
+        <span>打开 3D 睡姿视图</span>
+      </button>
+    </section>
+
     <section class="group status">
       <h4 class="group-title"><Icon name="radio" :size="11" />系统状态</h4>
       <ul class="status-list">
@@ -363,6 +372,31 @@ function toggleLayer(key: LayerDef['key']) {
   color: var(--accent);
   border-color: var(--accent-soft-strong);
   background: var(--accent-soft);
+}
+
+/* 3D 视图入口 */
+.d3-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 10px;
+  background: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+  color: #f2fbf6;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    filter var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.d3-open:hover {
+  filter: brightness(1.08);
+  box-shadow: var(--shadow-float);
 }
 
 /* 系统状态 */

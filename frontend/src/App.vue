@@ -58,6 +58,35 @@ async function loadData(): Promise<void> {
   }
 }
 
+/**
+ * #dataset= 直链参数：从后端拉取数据集真实帧作为「离线回放」数据源
+ * （未接入设备时回放历史记录；回放帧同样逐帧送模型推理）。
+ */
+async function loadDatasetStream(filesParam: string): Promise<void> {
+  const names = filesParam.split(',').map((s) => s.trim()).filter(Boolean);
+  if (names.length === 0) return;
+  const query = names.map((n) => `files=${encodeURIComponent(n)}`).join('&');
+  try {
+    const res = await fetch(`/api/dataset/stream?${query}`);
+    if (!res.ok) {
+      console.warn(`[数据] 数据集流加载失败（HTTP ${res.status}），继续使用内置演示数据`);
+      return;
+    }
+    const dynamic = (await res.json()) as DemoData['dynamic'];
+    // 保留 demo.json 的 people（静态姿态回放用），替换翻身过程帧源
+    data.value = { people: data.value?.people ?? [], dynamic };
+    dataSource.value = 'demo';
+    sourceType.value = 'dynamic';
+    personIdx.value = 0;
+    actionIdx.value = 0;
+    selectedRegion.value = null;
+    inference.setDisplayMode('demo');
+    rebuildController();
+  } catch (e) {
+    console.warn('[数据] 数据集流加载失败，继续使用内置演示数据：', e);
+  }
+}
+
 function selectDataSource(t: 'demo' | 'simulated'): void {
   if (dataSource.value === t) return;
   dataSource.value = t;
@@ -85,11 +114,9 @@ const scaleMode = ref<ScaleMode>('auto');
 const hoverRegion = ref<number | null>(null);
 
 const currentAction = computed(() => person.value?.actions[actionIdx.value] ?? null);
-// 实时推理模式：动态翻身序列作为「模拟实时流」循环播放（真实设备接入后替换为设备帧源）；
-// 离线回放模式：按侧栏回放选择（姿态动作/翻身过程）播放。
-const effectiveDynamic = computed(
-  () => inference.displayMode.value === 'inference' || sourceType.value === 'dynamic',
-);
+// 离线回放模式：按侧栏回放选择（姿态动作/翻身过程）播放记录数据，帧同样送推理；
+// 实时推理模式：帧源为设备接口（inference.deviceFrame），无输入时保持静止（黑屏）。
+const effectiveDynamic = computed(() => sourceType.value === 'dynamic');
 const frameCount = computed(() =>
   effectiveDynamic.value
     ? data.value?.dynamic.frames.length ?? 0
@@ -119,7 +146,9 @@ const poseDurationFrames = computed(() => poseDuration(poseKeys.value, frameIdx.
 
 const sourceLabel = computed(() => {
   if (inference.displayMode.value === 'inference') {
-    return `${data.value?.dynamic.person ?? ''} · 模拟实时流`;
+    return inference.deviceSource.value
+      ? `设备流 · ${inference.deviceSource.value}`
+      : '等待设备输入';
   }
   return sourceType.value === 'dynamic'
     ? `${data.value?.dynamic.person ?? ''} · 翻身过程`
@@ -133,6 +162,13 @@ const speed = ref(1);
 const playing = ref(false);
 
 function rebuildController() {
+  if (inference.displayMode.value === 'inference') {
+    // 实时推理：帧源为设备流，无回放控制器
+    controller.value = null;
+    frameIdx.value = 0;
+    playing.value = false;
+    return;
+  }
   const frames = effectiveDynamic.value
     ? (data.value?.dynamic.frames ?? [])
     : (currentAction.value?.frames ?? []);
@@ -142,34 +178,36 @@ function rebuildController() {
     playing.value = false;
     return;
   }
-  // 实时推理：模拟实时流循环自动播放；离线回放：停在末尾、手动播放
-  const realtime = inference.displayMode.value === 'inference';
+  // 离线回放：停在末尾、手动播放（帧同样逐帧送推理）
   controller.value = new PlaybackController(frames as ArrayLike<number>[], {
     fps: 10,
-    loop: realtime,
+    loop: false,
   });
   controller.value.onFrame = (i) => (frameIdx.value = i);
   controller.value.speed = speed.value;
   frameIdx.value = 0;
-  if (realtime) controller.value.play();
-  playing.value = realtime;
+  playing.value = false;
 }
 
 const currentFrame = computed(
   () =>
-    (effectiveDynamic.value
-      ? data.value?.dynamic.frames[frameIdx.value]
-      : currentAction.value?.frames[frameIdx.value]) ?? new Float32Array(0),
+    (inference.displayMode.value === 'inference'
+      ? (inference.deviceFrame.value ?? new Float32Array(0))
+      : effectiveDynamic.value
+        ? data.value?.dynamic.frames[frameIdx.value]
+        : currentAction.value?.frames[frameIdx.value]) ?? new Float32Array(0),
 );
 
-// 显示帧 = 实时推理模式优先使用后端弱区增强矩阵，否则使用扣除该人空载背景后的净压力
-// （背景噪声在热力图上自然归零，"离床"画面即全黑）
+// 显示帧 = 模型弱区增强矩阵优先（两种模式均可用），否则回退原始帧；
+// 离线回放额外扣除该人空载背景后的净压力（背景噪声在热力图上自然归零）
 const displayFrame = computed(() => {
-  const bg = bgForMetrics.value;
   const src =
-    inference.displayMode.value === 'inference' && inference.enhancedFrame.value
-      ? inference.enhancedFrame.value
-      : currentFrame.value;
+    inference.enhancedFrame.value ??
+    (inference.displayMode.value === 'inference'
+      ? inference.deviceFrame.value ?? new Float32Array(0)
+      : currentFrame.value);
+  if (inference.displayMode.value === 'inference' || !src.length) return src;
+  const bg = bgForMetrics.value;
   if (!bg) return src;
   const out = new Float32Array(src.length);
   for (let i = 0; i < src.length; i++) out[i] = Math.max(src[i] - bg[i], 0);
@@ -177,26 +215,35 @@ const displayFrame = computed(() => {
 });
 
 const metrics = computed(() => {
-  if (!currentFrame.value.length || !person.value) return null;
-  return computeMetrics(currentFrame.value, bgForMetrics.value, 20);
+  if (!currentFrame.value.length) return null;
+  const bg = inference.displayMode.value === 'inference' ? null : bgForMetrics.value;
+  return computeMetrics(currentFrame.value, bg, 20);
 });
 
 // 设计空间内热力图最大高度（1920×1080 常量：内容行 758 - 面板镶边 ~150）
 const heatmapMaxHeight = 608;
 
-const framesList = computed<ArrayLike<number>[]>(() =>
-  effectiveDynamic.value
+const framesList = computed<ArrayLike<number>[]>(() => {
+  if (inference.displayMode.value === 'inference') {
+    const f = inference.deviceFrame.value;
+    return f && f.length ? [f] : [];
+  }
+  return effectiveDynamic.value
     ? (data.value?.dynamic.frames ?? [])
-    : (currentAction.value?.frames ?? []),
-);
+    : (currentAction.value?.frames ?? []);
+});
 const bgForMetrics = computed<ArrayLike<number> | null>(() =>
-  effectiveDynamic.value ? (data.value?.dynamic.bg ?? null) : (person.value?.bg ?? null),
+  inference.displayMode.value === 'inference'
+    ? null
+    : effectiveDynamic.value
+      ? (data.value?.dynamic.bg ?? null)
+      : (person.value?.bg ?? null),
 );
 const history = computed(() => metricsHistory(framesList.value, bgForMetrics.value, 20));
 
-// 区域：实时推理模式只用 body_partition 推理区域；离线回放模式用记录标注（两模式互不混用）
+// 区域：模型分区结果优先（两种模式均接推理）；不可用时回放模式回退记录标注
 const regions = computed(() => {
-  if (inference.displayMode.value === 'inference' && inference.partition.value) {
+  if (inference.partition.value) {
     return partitionRegionsToBodyRegions(inference.partition.value);
   }
   if (inference.displayMode.value === 'inference') return null;
@@ -204,18 +251,14 @@ const regions = computed(() => {
     ? parseRegion(currentAction.value.region)
     : null;
 });
-/** 分区掩码覆盖层（仅实时推理模式） */
+/** 分区掩码覆盖层（模型输出，两种模式可用） */
 const partitionMask = computed(() =>
-  inference.displayMode.value === 'inference' && inference.partition.value
-    ? inference.partition.value.mask
-    : null,
+  inference.partition.value ? inference.partition.value.mask : null,
 );
 /** 区域来源：inference（模型分区）| annotation（记录标注）| null（无区域） */
 const regionSource = computed<'inference' | 'annotation' | null>(() => {
   if (!regions.value) return null;
-  return inference.displayMode.value === 'inference' && inference.partitionAvailable.value
-    ? 'inference'
-    : 'annotation';
+  return inference.partitionAvailable.value ? 'inference' : 'annotation';
 });
 // 脊柱参考线：记录标注，仅在离线回放模式使用
 const spine = computed(() =>
@@ -236,9 +279,9 @@ const selectedRegion = ref<number | null>(null);
 const show3D = ref(false);
 /** 中下方面板视图：3D 演示持久展示，压力曲线按按钮切换 */
 const viewMode = ref<'3d' | 'chart'>('3d');
-// 3D 人体姿势：实时推理模式优先用模型推理结果，否则用记录标签
+// 3D 人体姿势：模型推理结果优先（两种模式），否则用记录标签
 const sleepPos3d = computed(() => {
-  if (inference.displayMode.value === 'inference' && inference.prediction.value) {
+  if (inference.prediction.value) {
     const id = inference.prediction.value.label_id;
     if (id >= 0 && id <= 3) return id as 0 | 1 | 2 | 3;
   }
@@ -320,27 +363,31 @@ const selectedRegionColor = computed(() => {
   return rg?.valid ? (REGION_COLORS[rg.name] ?? '#8b8f98') : '#8b8f98';
 });
 
-// 单帧聚合推理（架构：通过 HTTP API 获取算法结果；实时推理为默认模式，离线/缺模型时按模块回退记录数据）
+// 单帧聚合推理（架构：通过 HTTP API 获取算法结果；两种模式均接推理，模型不可用时回退记录数据）
 const inference = useFrameInference();
 const displayPose = computed(() => {
-  if (inference.displayMode.value === 'inference' && inference.prediction.value) {
+  if (inference.prediction.value) {
     return inference.prediction.value.label_zh;
+  }
+  if (inference.displayMode.value === 'inference') {
+    return inference.streamIdle.value ? '等待设备输入' : sleepPosName.value;
   }
   return sleepPosName.value;
 });
 const poseNote = computed(() => {
+  if (inference.prediction.value) {
+    return `${inference.postureModelAvailable.value ? '模型推理' : '推理'} · POST /api/frame/analyze`;
+  }
   if (inference.displayMode.value === 'inference') {
-    if (inference.prediction.value) {
-      return `${inference.postureModelAvailable.value ? '模型推理' : '推理'} · POST /api/frame/analyze`;
-    }
-    if (inference.backend.value === 'offline') return '后端离线 · 已回退记录标签';
-    return '睡姿模型不可用 · 已回退记录标签';
+    if (inference.streamIdle.value) return '未检测到设备输入 · 保持静止';
+    if (inference.backend.value === 'offline') return '后端离线 · 等待重连';
+    return '等待模型推理结果';
   }
   return sourceType.value === 'dynamic'
-    ? '翻身过程 · 未使用文件内标签'
+    ? '翻身过程 · 记录标签（无模型结果时）'
     : currentAction.value?.action === 0
       ? '空载记录 · 判定为离床'
-      : undefined;
+      : '记录标签（无模型结果时）';
 });
 
 // rAF 驱动
@@ -401,6 +448,16 @@ function onSensorSelect(id: number) {
 // URL hash 状态（便于直链演示）
 function applyHash() {
   const h = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
+  // 模式解析放在最前：随后的 rebuildController/autoplay 基于最终模式执行
+  if (h.get('pose') === 'svm') inference.setDisplayMode('inference');
+  if (h.get('pose') === 'label') inference.setDisplayMode('demo');
+  const dmRaw = h.get('display');
+  if (dmRaw === 'inference' || dmRaw === 'demo') {
+    inference.setDisplayMode(dmRaw);
+  } else if (h.get('type') || h.get('person') || h.get('action') || h.get('calf') || h.get('region')) {
+    // 带回放参数的演示直链隐含「离线回放」模式；无参数默认「实时推理」
+    inference.setDisplayMode('demo');
+  }
   if (h.get('type') === 'dynamic') sourceType.value = 'dynamic';
   const pn = h.get('person');
   if (pn && data.value) {
@@ -431,16 +488,9 @@ function applyHash() {
     const f = Number(fRaw);
     if (!Number.isNaN(f)) controller.value?.seek(f);
   }
-  if (h.get('autoplay') === '1') controller.value?.play();
-  // 兼容旧演示直链：#pose=svm → 实时推理；#pose=label → 离线回放
-  if (h.get('pose') === 'svm') inference.setDisplayMode('inference');
-  if (h.get('pose') === 'label') inference.setDisplayMode('demo');
-  const dmRaw = h.get('display');
-  if (dmRaw === 'inference' || dmRaw === 'demo') {
-    inference.setDisplayMode(dmRaw);
-  } else if (h.get('type') || h.get('person') || h.get('action') || h.get('calf') || h.get('region')) {
-    // 带回放参数的演示直链隐含「离线回放」模式；无参数默认「实时推理」
-    inference.setDisplayMode('demo');
+  if (h.get('autoplay') === '1') {
+    // 延迟到模式切换 watcher 的 rebuildController 之后，避免播放状态被重置
+    window.setTimeout(() => controller.value?.play(), 0);
   }
 }
 
@@ -464,6 +514,11 @@ const scaleWarning = computed(() =>
 onMounted(async () => {
   void inference.probe();
   await loadData();
+  const hash = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
+  const dsFiles = hash.get('dataset');
+  if (dsFiles) {
+    await loadDatasetStream(dsFiles);
+  }
   if (person.value) {
     const i = person.value.actions.findIndex((a) => a.action !== 0);
     if (i >= 0) actionIdx.value = i;
@@ -520,6 +575,8 @@ watch(
                 :partition-model-available="inference.partitionModelAvailable.value"
                 :contract-mismatch="inference.contractMismatch.value"
                 :simulated="dataSource === 'simulated'"
+                :stream-idle="inference.streamIdle.value"
+                :device-source="inference.deviceSource.value"
                 @update:data-source="selectDataSource"
                 @update:source-type="selectSource"
                 @update:person-idx="selectPerson"
@@ -632,7 +689,7 @@ watch(
                 :duration-frames="poseDurationFrames"
                 :pose-note="poseNote"
                 :playing="playing"
-                :pose-source="inference.displayMode.value === 'inference' && inference.prediction.value ? 'inference' : 'label'"
+                :pose-source="inference.prediction.value ? 'inference' : 'label'"
                 :confidence="inference.prediction.value?.confidence ?? null"
                 :predicting="inference.analyzing.value"
                 :metrics="metrics"

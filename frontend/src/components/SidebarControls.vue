@@ -23,7 +23,7 @@ const props = defineProps<{
   showSpine: boolean;
   showCalf: boolean;
   showDynLabels: boolean;
-  /** 数据模式：实时推理（默认，模型驱动界面）| 离线回放（记录标签与标注） */
+  /** 数据模式：实时推理（设备帧输入，默认）| 离线回放（未接入设备时回放记录，仍接推理） */
   displayMode: DisplayMode;
   backendOnline: boolean;
   backendState: 'checking' | 'online' | 'offline';
@@ -31,6 +31,9 @@ const props = defineProps<{
   partitionModelAvailable: boolean;
   contractMismatch: boolean;
   simulated: boolean;
+  /** 实时推理模式：当前是否有设备帧输入（false = 保持静止等待） */
+  streamIdle: boolean;
+  deviceSource: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -76,13 +79,13 @@ const displayModeOptions = computed(() => [
     label: '实时推理',
     disabled: !props.backendOnline,
     title: props.backendOnline
-      ? '默认模式：模拟实时流逐帧分析（睡姿 + 身体分区 + 弱区增强），结果驱动热力图、区域与 3D 模型'
-      : '后端未连接 · 以记录数据兜底，重连后自动恢复推理',
+      ? '默认模式：设备接口逐帧输入（POST /api/stream/ingest），实时模型推理；无设备输入时保持静止'
+      : '后端未连接 · 保持静止等待，重连后自动恢复推理',
   },
   {
     value: 'demo',
     label: '离线回放',
-    title: '播放离线预存数据：使用记录内睡姿标签与部位标注渲染',
+    title: '未接入设备时回放历史记录数据；回放帧同样逐帧模型推理，无模型结果时回退记录标注',
   },
 ]);
 
@@ -98,10 +101,7 @@ const layers = computed<LayerDef[]>(() => [
     key: 'showRegions',
     icon: 'target',
     label: '部位区域',
-    title:
-      props.displayMode === 'inference'
-        ? '身体分区模型输出（/api/frame/analyze）'
-        : '24 区域标注',
+    title: '身体分区模型输出（/api/frame/analyze）；模型不可用时回退记录标注',
     visible: true,
   },
   {
@@ -288,11 +288,24 @@ function toggleLayer(key: LayerDef['key']) {
           {{ partitionModelAvailable ? '分区模型就绪' : '分区模型缺失' }}
         </li>
         <li
+          v-if="displayMode === 'inference' && backendState === 'online'"
+          class="status-row"
+          :class="streamIdle ? 'mute' : 'ok'"
+          :title="
+            streamIdle
+              ? '未检测到设备帧输入（POST /api/stream/ingest）· 界面保持静止'
+              : `设备帧输入中 · 来源 ${deviceSource ?? 'device'} · 逐帧实时推理`
+          "
+        >
+          <i class="dot" />
+          {{ streamIdle ? '等待设备输入' : `设备流 · ${deviceSource ?? 'device'}` }}
+        </li>
+        <li
           v-if="displayMode === 'inference' && backendState !== 'online'"
           class="status-row warn"
           title="实时推理模式 · 后端重连后自动恢复逐帧分析"
         >
-          <i class="dot" />等待后端 · 记录数据兜底
+          <i class="dot" />等待后端 · 保持静止
         </li>
         <li v-if="simulated" class="status-row warn" title="使用内置模拟数据">
           <i class="dot" />演示模式 · 内置数据

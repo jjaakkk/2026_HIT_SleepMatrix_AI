@@ -10,13 +10,21 @@
 
 - **共享契约**：`src/core/contracts/posture.json` 为 `shared/contracts/posture.json` 的 vendored 副本，
   睡姿 ID / 动作映射 / 镜像关系全部由契约驱动（`src/core/contracts.ts` 校验 + `types.ts` 只读消费），不再硬编码。
-- **HTTP API**：`src/core/api.ts` 封装 `GET /api/health`、`GET /api/contracts/posture`、`POST /api/posture/predict`；
+- **HTTP API**：`src/core/api.ts` 封装 `GET /api/health`、`GET /api/contracts/posture`、`POST /api/posture/predict`、
+  `POST /api/frame/analyze`（单帧聚合：睡姿 + 身体分区 + 弱区增强）；
   启动时拉取远端契约（版本一致才替换生效，不一致顶栏显示警告徽章）。
-- **睡姿推理**：侧栏"睡姿识别"可切换 `记录标签` / `SVM 推理`；推理模式逐帧调用后端（350ms 节流 + latest-wins），
-  睡姿卡展示 `label_zh + 置信度`。后端离线时自动禁用推理选项、回退标签模式、每 15s 静默重连。
+- **两种大模式**（侧栏「模式」）：
+  - `实时推理`（默认）：动态翻身序列作为**模拟实时流**循环自动播放（真实设备接入后替换帧源），
+    逐帧调用 `/api/frame/analyze`（350ms 节流 + latest-wins），推理结果驱动睡姿卡（`label_zh + 置信度`）、
+    热力图（增强矩阵 + 分区掩码/区域）、3D 人体姿势；
+  - `离线回放`（一键切换）：播放离线预存数据，**仅此模式显示** 数据源/回放/受测者/姿态记录 选择器，
+    使用记录内睡姿标签与部位标注渲染。
+  后端对不可用模块返回模块级错误对象，仅降级对应模块（如睡姿模型缺失 → 睡姿回退记录标签，
+  分区/增强继续用推理结果）；后端离线时每 15s 静默重连，重连后自动恢复推理。
 - **弱力可视化**：渲染层压扩（γ=0.35）已与后端 `weak_area_enhance` 算法区分命名，口径不混淆。
 - dev/preview 均已配置 `/api` 代理 → `127.0.0.1:5000`；生产可用 `VITE_API_BASE` 覆盖。
-  演示直链新增 `pose=svm`（后端在线时进入 SVM 推理演示）。
+  演示直链：`display=demo` 进入离线回放、`display=inference` 进入实时推理（兼容旧参数 `pose=svm` / `pose=label`）；
+  不带 `display` 时，带 `type/person/action` 等回放参数的直链自动进入「离线回放」。
 
 ## 技术栈
 
@@ -97,4 +105,5 @@ Phase 5 区域分析 ✅ → Phase 6 完整大屏 UI ✅ → Phase 7 气囊模�
 | 6 | 动态+睡姿事件条（标签仅供参考） | `#type=dynamic&frame=55&dynlabels=1` |
 | 7 | 气囊剧本：腰部支撑增强→腰部联动 | 点击"腰部支撑增强"按钮 |
 | 8 | 点击任意传感器点/区域：曲线联动 | 鼠标操作 |
-| 9 | SVM 推理演示（需后端在线） | `#type=static&person=SAI&action=1&frame=10&pose=svm` |
+| 9 | 实时推理演示（默认模式，需后端在线）：模拟实时流 + 分区掩码/区域 + 增强热力图 + 3D 姿势由模型驱动 | `#display=inference`（或无参数打开首页） |
+| 10 | 离线回放模式（记录标签与标注；带回放参数的直链自动进入） | `#type=static&person=SAI&action=1&frame=10&display=demo` |

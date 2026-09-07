@@ -21,7 +21,8 @@ import { regionStatsAll, regionMetrics, REGION_COLORS } from './core/region-stat
 import { PlaybackController } from './core/playback.ts';
 import { SimulatedAirbagSource, type AirbagState } from './core/airbag.ts';
 import { generateSimulatedDataset } from './core/simulate.ts';
-import { usePostureInference } from './composables/usePostureInference.ts';
+import { useFrameInference } from './composables/useFrameInference.ts';
+import { partitionRegionsToBodyRegions } from './core/frame-inference.ts';
 import { SENSOR_BY_ID, mmToMatrixCell } from './core/airbag-layout.ts';
 
 // 缩放适配：固定 1920×1080 设计空间，任意分辨率整体等比缩放（零滚动零溢出）
@@ -84,13 +85,18 @@ const scaleMode = ref<ScaleMode>('auto');
 const hoverRegion = ref<number | null>(null);
 
 const currentAction = computed(() => person.value?.actions[actionIdx.value] ?? null);
+// 实时推理模式：动态翻身序列作为「模拟实时流」循环播放（真实设备接入后替换为设备帧源）；
+// 离线回放模式：按侧栏回放选择（姿态动作/翻身过程）播放。
+const effectiveDynamic = computed(
+  () => inference.displayMode.value === 'inference' || sourceType.value === 'dynamic',
+);
 const frameCount = computed(() =>
-  sourceType.value === 'dynamic'
+  effectiveDynamic.value
     ? data.value?.dynamic.frames.length ?? 0
     : currentAction.value?.frames.length ?? 0,
 );
 const sleepPosName = computed(() =>
-  sourceType.value === 'dynamic'
+  effectiveDynamic.value
     ? '动态过程'
     : currentAction.value
       ? currentAction.value.action === 0
@@ -104,18 +110,21 @@ const sleepPosName = computed(() =>
 // 睡姿状态持续时长（回放顺序内连续同状态帧数）
 const poseKeys = computed(() =>
   history.value.map((m) => {
-    if (sourceType.value === 'dynamic') return '动态过程';
+    if (effectiveDynamic.value) return '动态过程';
     if (currentAction.value?.action === 0) return isBedOccupied(m) ? '在床' : '离床 · 无人';
     return SLEEP_POS_NAMES[currentAction.value?.sleepPos ?? -1] ?? '未知';
   }),
 );
 const poseDurationFrames = computed(() => poseDuration(poseKeys.value, frameIdx.value));
 
-const sourceLabel = computed(() =>
-  sourceType.value === 'dynamic'
+const sourceLabel = computed(() => {
+  if (inference.displayMode.value === 'inference') {
+    return `${data.value?.dynamic.person ?? ''} · 模拟实时流`;
+  }
+  return sourceType.value === 'dynamic'
     ? `${data.value?.dynamic.person ?? ''} · 翻身过程`
-    : `${person.value?.name ?? ''} · ${sleepPosName.value}`,
-);
+    : `${person.value?.name ?? ''} · ${sleepPosName.value}`;
+});
 
 // 回放引擎
 const controller = ref<PlaybackController | null>(null);
@@ -124,31 +133,46 @@ const speed = ref(1);
 const playing = ref(false);
 
 function rebuildController() {
-  const frames =
-    sourceType.value === 'dynamic'
-      ? (data.value?.dynamic.frames ?? [])
-      : (currentAction.value?.frames ?? []);
-  controller.value = new PlaybackController(frames as ArrayLike<number>[], { fps: 10 });
+  const frames = effectiveDynamic.value
+    ? (data.value?.dynamic.frames ?? [])
+    : (currentAction.value?.frames ?? []);
+  if (frames.length === 0) {
+    controller.value = null;
+    frameIdx.value = 0;
+    playing.value = false;
+    return;
+  }
+  // 实时推理：模拟实时流循环自动播放；离线回放：停在末尾、手动播放
+  const realtime = inference.displayMode.value === 'inference';
+  controller.value = new PlaybackController(frames as ArrayLike<number>[], {
+    fps: 10,
+    loop: realtime,
+  });
   controller.value.onFrame = (i) => (frameIdx.value = i);
   controller.value.speed = speed.value;
-  playing.value = false;
   frameIdx.value = 0;
+  if (realtime) controller.value.play();
+  playing.value = realtime;
 }
 
 const currentFrame = computed(
   () =>
-    (sourceType.value === 'dynamic'
+    (effectiveDynamic.value
       ? data.value?.dynamic.frames[frameIdx.value]
       : currentAction.value?.frames[frameIdx.value]) ?? new Float32Array(0),
 );
 
-// 显示帧 = 扣除该人空载背景后的净压力（背景噪声在热力图上自然归零，"离床"画面即全黑）
+// 显示帧 = 实时推理模式优先使用后端弱区增强矩阵，否则使用扣除该人空载背景后的净压力
+// （背景噪声在热力图上自然归零，"离床"画面即全黑）
 const displayFrame = computed(() => {
-  const raw = currentFrame.value;
   const bg = bgForMetrics.value;
-  if (!bg) return raw;
-  const out = new Float32Array(raw.length);
-  for (let i = 0; i < raw.length; i++) out[i] = Math.max(raw[i] - bg[i], 0);
+  const src =
+    inference.displayMode.value === 'inference' && inference.enhancedFrame.value
+      ? inference.enhancedFrame.value
+      : currentFrame.value;
+  if (!bg) return src;
+  const out = new Float32Array(src.length);
+  for (let i = 0; i < src.length; i++) out[i] = Math.max(src[i] - bg[i], 0);
   return out;
 });
 
@@ -161,23 +185,43 @@ const metrics = computed(() => {
 const heatmapMaxHeight = 608;
 
 const framesList = computed<ArrayLike<number>[]>(() =>
-  sourceType.value === 'dynamic'
+  effectiveDynamic.value
     ? (data.value?.dynamic.frames ?? [])
     : (currentAction.value?.frames ?? []),
 );
 const bgForMetrics = computed<ArrayLike<number> | null>(() =>
-  sourceType.value === 'dynamic' ? (data.value?.dynamic.bg ?? null) : (person.value?.bg ?? null),
+  effectiveDynamic.value ? (data.value?.dynamic.bg ?? null) : (person.value?.bg ?? null),
 );
 const history = computed(() => metricsHistory(framesList.value, bgForMetrics.value, 20));
 
-// 区域与脊柱标注
-const regions = computed(() =>
-  sourceType.value === 'static' && currentAction.value?.region
+// 区域：实时推理模式只用 body_partition 推理区域；离线回放模式用记录标注（两模式互不混用）
+const regions = computed(() => {
+  if (inference.displayMode.value === 'inference' && inference.partition.value) {
+    return partitionRegionsToBodyRegions(inference.partition.value);
+  }
+  if (inference.displayMode.value === 'inference') return null;
+  return sourceType.value === 'static' && currentAction.value?.region
     ? parseRegion(currentAction.value.region)
+    : null;
+});
+/** 分区掩码覆盖层（仅实时推理模式） */
+const partitionMask = computed(() =>
+  inference.displayMode.value === 'inference' && inference.partition.value
+    ? inference.partition.value.mask
     : null,
 );
+/** 区域来源：inference（模型分区）| annotation（记录标注）| null（无区域） */
+const regionSource = computed<'inference' | 'annotation' | null>(() => {
+  if (!regions.value) return null;
+  return inference.displayMode.value === 'inference' && inference.partitionAvailable.value
+    ? 'inference'
+    : 'annotation';
+});
+// 脊柱参考线：记录标注，仅在离线回放模式使用
 const spine = computed(() =>
-  sourceType.value === 'static' && currentAction.value?.spine
+  inference.displayMode.value === 'demo' &&
+  sourceType.value === 'static' &&
+  currentAction.value?.spine
     ? parseSpine(currentAction.value.spine)
     : null,
 );
@@ -192,7 +236,12 @@ const selectedRegion = ref<number | null>(null);
 const show3D = ref(false);
 /** 中下方面板视图：3D 演示持久展示，压力曲线按按钮切换 */
 const viewMode = ref<'3d' | 'chart'>('3d');
+// 3D 人体姿势：实时推理模式优先用模型推理结果，否则用记录标签
 const sleepPos3d = computed(() => {
+  if (inference.displayMode.value === 'inference' && inference.prediction.value) {
+    const id = inference.prediction.value.label_id;
+    if (id >= 0 && id <= 3) return id as 0 | 1 | 2 | 3;
+  }
   const p = currentAction.value?.sleepPos;
   return typeof p === 'number' && p >= 0 && p <= 3 ? p : 0;
 });
@@ -271,18 +320,21 @@ const selectedRegionColor = computed(() => {
   return rg?.valid ? (REGION_COLORS[rg.name] ?? '#8b8f98') : '#8b8f98';
 });
 
-// 睡姿推理（架构：通过 HTTP API 获取算法结果；离线时回退记录标签）
-const inference = usePostureInference();
+// 单帧聚合推理（架构：通过 HTTP API 获取算法结果；实时推理为默认模式，离线/缺模型时按模块回退记录数据）
+const inference = useFrameInference();
 const displayPose = computed(() => {
-  if (inference.poseSource.value === 'inference' && inference.prediction.value) {
+  if (inference.displayMode.value === 'inference' && inference.prediction.value) {
     return inference.prediction.value.label_zh;
   }
   return sleepPosName.value;
 });
 const poseNote = computed(() => {
-  if (inference.poseSource.value === 'inference') {
-    if (inference.backend.value === 'online') return 'SVM 逐帧推理 · POST /api/posture/predict';
-    return '后端离线 · 已回退记录标签';
+  if (inference.displayMode.value === 'inference') {
+    if (inference.prediction.value) {
+      return `${inference.postureModelAvailable.value ? '模型推理' : '推理'} · POST /api/frame/analyze`;
+    }
+    if (inference.backend.value === 'offline') return '后端离线 · 已回退记录标签';
+    return '睡姿模型不可用 · 已回退记录标签';
   }
   return sourceType.value === 'dynamic'
     ? '翻身过程 · 未使用文件内标签'
@@ -380,7 +432,16 @@ function applyHash() {
     if (!Number.isNaN(f)) controller.value?.seek(f);
   }
   if (h.get('autoplay') === '1') controller.value?.play();
-  if (h.get('pose') === 'svm') inference.setPoseSource('inference');
+  // 兼容旧演示直链：#pose=svm → 实时推理；#pose=label → 离线回放
+  if (h.get('pose') === 'svm') inference.setDisplayMode('inference');
+  if (h.get('pose') === 'label') inference.setDisplayMode('demo');
+  const dmRaw = h.get('display');
+  if (dmRaw === 'inference' || dmRaw === 'demo') {
+    inference.setDisplayMode(dmRaw);
+  } else if (h.get('type') || h.get('person') || h.get('action') || h.get('calf') || h.get('region')) {
+    // 带回放参数的演示直链隐含「离线回放」模式；无参数默认「实时推理」
+    inference.setDisplayMode('demo');
+  }
 }
 
 const legendTicks = computed<number[] | null>(() => {
@@ -417,11 +478,20 @@ watch([sourceType, actionIdx, personIdx], () => {
   selectedRegion.value = null;
   selectedSensor.value = null;
 });
-
-// 推理触发：帧号 / 来源 / 后端状态变化时队列化当前帧（组合式函数内部节流 + latest-wins）
+// 模式切换：重建帧源（实时推理 → 动态序列循环自动播放；离线回放 → 所选记录）
 watch(
-  [frameIdx, () => inference.poseSource.value, () => inference.backend.value],
-  () => inference.queueInference(currentFrame.value),
+  () => inference.displayMode.value,
+  () => {
+    selectedRegion.value = null;
+    selectedSensor.value = null;
+    rebuildController();
+  },
+);
+
+// 推理触发：帧号 / 数据模式 / 后端状态变化时队列化当前帧（组合式函数内部节流 + latest-wins）
+watch(
+  [frameIdx, () => inference.displayMode.value, () => inference.backend.value],
+  () => inference.queueAnalyze(currentFrame.value),
 );
 </script>
 
@@ -443,10 +513,11 @@ watch(
                 :show-spine="showSpine"
                 :show-calf="showCalf"
                 :show-dyn-labels="showDynLabels"
-                :pose-source="inference.poseSource.value"
+                :display-mode="inference.displayMode.value"
                 :backend-online="inference.backend.value === 'online'"
                 :backend-state="inference.backend.value"
-                :model-available="inference.modelAvailable.value"
+                :model-available="inference.postureModelAvailable.value"
+                :partition-model-available="inference.partitionModelAvailable.value"
                 :contract-mismatch="inference.contractMismatch.value"
                 :simulated="dataSource === 'simulated'"
                 @update:data-source="selectDataSource"
@@ -457,7 +528,7 @@ watch(
                 @update:show-spine="showSpine = $event"
                 @update:show-calf="showCalf = $event"
                 @update:show-dyn-labels="showDynLabels = $event"
-                @update:pose-source="inference.setPoseSource($event)"
+                @update:display-mode="inference.setDisplayMode($event)"
                 @open-3d="show3D = true"
               />
             </aside>
@@ -474,6 +545,8 @@ watch(
                 :show-spine="showSpine"
                 :show-calf="showCalf"
                 :selected-region="selectedRegion"
+                :partition-mask="partitionMask"
+                :region-source="regionSource"
                 :source-label="sourceLabel"
                 :frame-idx="frameIdx"
                 :frame-count="frameCount"
@@ -559,9 +632,9 @@ watch(
                 :duration-frames="poseDurationFrames"
                 :pose-note="poseNote"
                 :playing="playing"
-                :pose-source="inference.poseSource.value"
+                :pose-source="inference.displayMode.value === 'inference' && inference.prediction.value ? 'inference' : 'label'"
                 :confidence="inference.prediction.value?.confidence ?? null"
-                :predicting="inference.predicting.value"
+                :predicting="inference.analyzing.value"
                 :metrics="metrics"
                 :history="history"
               />

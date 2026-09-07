@@ -10,6 +10,7 @@ import UiSelect, { type SelectOption } from './ui/UiSelect.vue';
 import Icon from './ui/Icon.vue';
 import { SLEEP_POS_NAMES } from '../core/types';
 import type { DemoAction, DemoPerson } from '../core/demo';
+import type { DisplayMode } from '../composables/useFrameInference';
 
 const props = defineProps<{
   dataSource: 'demo' | 'simulated';
@@ -22,10 +23,12 @@ const props = defineProps<{
   showSpine: boolean;
   showCalf: boolean;
   showDynLabels: boolean;
-  poseSource: 'label' | 'inference';
+  /** 数据模式：实时推理（默认，模型驱动界面）| 离线回放（记录标签与标注） */
+  displayMode: DisplayMode;
   backendOnline: boolean;
   backendState: 'checking' | 'online' | 'offline';
   modelAvailable: boolean;
+  partitionModelAvailable: boolean;
   contractMismatch: boolean;
   simulated: boolean;
 }>();
@@ -39,7 +42,7 @@ const emit = defineEmits<{
   'update:showSpine': [v: boolean];
   'update:showCalf': [v: boolean];
   'update:showDynLabels': [v: boolean];
-  'update:poseSource': [v: 'label' | 'inference'];
+  'update:displayMode': [v: DisplayMode];
   open3d: [];
 }>();
 
@@ -67,15 +70,19 @@ const sourceOptions = [
   { value: 'static', label: '姿态动作' },
   { value: 'dynamic', label: '翻身过程' },
 ];
-const poseSourceOptions = computed(() => [
-  { value: 'label', label: '记录标签', title: '使用记录内睡姿标签（离线可用）' },
+const displayModeOptions = computed(() => [
   {
     value: 'inference',
-    label: 'SVM 推理',
+    label: '实时推理',
     disabled: !props.backendOnline,
     title: props.backendOnline
-      ? '调用后端 /api/posture/predict 逐帧推理'
-      : '后端未连接，SVM 推理不可用',
+      ? '默认模式：模拟实时流逐帧分析（睡姿 + 身体分区 + 弱区增强），结果驱动热力图、区域与 3D 模型'
+      : '后端未连接 · 以记录数据兜底，重连后自动恢复推理',
+  },
+  {
+    value: 'demo',
+    label: '离线回放',
+    title: '播放离线预存数据：使用记录内睡姿标签与部位标注渲染',
   },
 ]);
 
@@ -91,29 +98,32 @@ const layers = computed<LayerDef[]>(() => [
     key: 'showRegions',
     icon: 'target',
     label: '部位区域',
-    title: '24 区域标注',
+    title:
+      props.displayMode === 'inference'
+        ? '身体分区模型输出（/api/frame/analyze）'
+        : '24 区域标注',
     visible: true,
   },
   {
     key: 'showSpine',
     icon: 'activity',
     label: '脊柱参考线',
-    title: '5 点拟合',
-    visible: true,
+    title: '5 点拟合（记录标注）',
+    visible: props.displayMode === 'demo',
   },
   {
     key: 'showCalf',
     icon: 'layers',
     label: '小腿区域',
-    title: '3 人已标注',
-    visible: true,
+    title: '3 人已标注（记录标注）',
+    visible: props.displayMode === 'demo',
   },
   {
     key: 'showDynLabels',
     icon: 'clock',
     label: '原始标签',
     title: '文件自带 · 仅供参考',
-    visible: props.sourceType === 'dynamic',
+    visible: props.sourceType === 'dynamic' && props.displayMode === 'demo',
   },
 ]);
 
@@ -157,60 +167,62 @@ function toggleLayer(key: LayerDef['key']) {
     </div>
 
     <section class="group">
-      <h4 class="group-title"><Icon name="database" :size="11" />数据源</h4>
+      <h4 class="group-title"><Icon name="sparkles" :size="11" />模式</h4>
       <UiSegmented
-        :model-value="dataSource"
-        :options="dataSourceOptions"
+        :model-value="displayMode"
+        :options="displayModeOptions"
         size="sm"
-        aria-label="数据源"
-        @update:model-value="emit('update:dataSource', $event as 'demo' | 'simulated')"
+        aria-label="模式（实时推理 / 离线回放）"
+        @update:model-value="emit('update:displayMode', $event as 'inference' | 'demo')"
       />
     </section>
 
-    <section class="group">
-      <h4 class="group-title"><Icon name="history" :size="11" />回放</h4>
-      <UiSegmented
-        :model-value="sourceType"
-        :options="sourceOptions"
-        size="sm"
-        aria-label="回放类型"
-        @update:model-value="emit('update:sourceType', $event as 'static' | 'dynamic')"
-      />
-    </section>
+    <template v-if="displayMode === 'demo'">
+      <section class="group">
+        <h4 class="group-title"><Icon name="database" :size="11" />数据源</h4>
+        <UiSegmented
+          :model-value="dataSource"
+          :options="dataSourceOptions"
+          size="sm"
+          aria-label="数据源"
+          @update:model-value="emit('update:dataSource', $event as 'demo' | 'simulated')"
+        />
+      </section>
 
-    <template v-if="sourceType === 'static'">
       <section class="group">
-        <h4 class="group-title"><Icon name="user" :size="11" />受测者</h4>
-        <UiSelect
-          :model-value="personIdx"
-          :options="personOptions"
-          icon="user"
-          aria-label="选择受测者"
-          @update:model-value="emit('update:personIdx', $event as number)"
+        <h4 class="group-title"><Icon name="history" :size="11" />回放</h4>
+        <UiSegmented
+          :model-value="sourceType"
+          :options="sourceOptions"
+          size="sm"
+          aria-label="回放类型"
+          @update:model-value="emit('update:sourceType', $event as 'static' | 'dynamic')"
         />
       </section>
-      <section class="group">
-        <h4 class="group-title"><Icon name="body" :size="11" />姿态记录</h4>
-        <UiSelect
-          :model-value="actionIdx"
-          :options="actionOptions"
-          icon="body"
-          aria-label="选择姿态记录"
-          @update:model-value="emit('update:actionIdx', $event as number)"
-        />
-      </section>
+
+      <template v-if="sourceType === 'static'">
+        <section class="group">
+          <h4 class="group-title"><Icon name="user" :size="11" />受测者</h4>
+          <UiSelect
+            :model-value="personIdx"
+            :options="personOptions"
+            icon="user"
+            aria-label="选择受测者"
+            @update:model-value="emit('update:personIdx', $event as number)"
+          />
+        </section>
+        <section class="group">
+          <h4 class="group-title"><Icon name="body" :size="11" />姿态记录</h4>
+          <UiSelect
+            :model-value="actionIdx"
+            :options="actionOptions"
+            icon="body"
+            aria-label="选择姿态记录"
+            @update:model-value="emit('update:actionIdx', $event as number)"
+          />
+        </section>
+      </template>
     </template>
-
-    <section class="group">
-      <h4 class="group-title"><Icon name="sparkles" :size="11" />睡姿识别</h4>
-      <UiSegmented
-        :model-value="poseSource"
-        :options="poseSourceOptions"
-        size="sm"
-        aria-label="睡姿判定来源"
-        @update:model-value="emit('update:poseSource', $event as 'label' | 'inference')"
-      />
-    </section>
 
     <section class="group">
       <h4 class="group-title"><Icon name="eye" :size="11" />图层</h4>
@@ -252,15 +264,35 @@ function toggleLayer(key: LayerDef['key']) {
           :title="
             backendState === 'online'
               ? modelAvailable
-                ? '算法服务已连接 · SVM 模型就绪'
-                : '算法服务已连接 · 模型文件缺失'
+                ? '算法服务已连接 · 睡姿模型就绪'
+                : '算法服务已连接 · 睡姿模型缺失（已回退记录标签）'
               : backendState === 'offline'
-                ? '后端未连接 · 睡姿以记录标签为准'
+                ? '后端未连接 · 实时推理以记录数据兜底'
                 : '检测后端 /api/health …'
           "
         >
           <i class="dot" />
           {{ backendState === 'online' ? '算法服务在线' : backendState === 'offline' ? '算法服务未连接' : '算法服务检测中' }}
+        </li>
+        <li
+          v-if="backendState === 'online'"
+          class="status-row"
+          :class="partitionModelAvailable ? 'ok' : 'warn'"
+          :title="
+            partitionModelAvailable
+              ? '身体分区模型就绪 · 热力图区域与掩码由模型输出'
+              : '身体分区模型缺失 · 区域回退记录标注'
+          "
+        >
+          <i class="dot" />
+          {{ partitionModelAvailable ? '分区模型就绪' : '分区模型缺失' }}
+        </li>
+        <li
+          v-if="displayMode === 'inference' && backendState !== 'online'"
+          class="status-row warn"
+          title="实时推理模式 · 后端重连后自动恢复逐帧分析"
+        >
+          <i class="dot" />等待后端 · 记录数据兜底
         </li>
         <li v-if="simulated" class="status-row warn" title="使用内置模拟数据">
           <i class="dot" />演示模式 · 内置数据

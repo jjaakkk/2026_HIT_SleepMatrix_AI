@@ -412,10 +412,10 @@ try {
   );
   const svmDisabled = await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.seg button')] as HTMLButtonElement[];
-    const b = btns.find((x) => x.textContent?.includes('SVM 推理'));
+    const b = btns.find((x) => x.textContent?.includes('实时推理'));
     return b ? b.disabled : null;
   });
-  check('后端离线时 SVM 推理选项禁用', svmDisabled === true, String(svmDisabled));
+  check('后端离线时实时推理选项禁用', svmDisabled === true, String(svmDisabled));
   const weakRenamed = await page.evaluate(() =>
     [...document.querySelectorAll('.seg button')].some((b) => b.textContent?.includes('弱力')),
   );

@@ -2,13 +2,15 @@
  * 后端 HTTP API 客户端（架构：前端只通过共享契约和 HTTP API 获取数据）。
  *
  * 端点（backend/app.py）：
- *   GET  /api/health              → 服务与模型状态
+ *   GET  /api/health              → 服务与各模型状态
  *   GET  /api/contracts/posture   → 语言中立共享契约（唯一事实源）
- *   POST /api/posture/predict     → 单帧睡姿推理（SVM/CNN）
+ *   POST /api/posture/predict     → 单帧睡姿推理（SVM/CNN/ensemble）
+ *   POST /api/frame/analyze       → 单帧聚合分析（睡姿 + 分区 + 增强）
  *
  * 基础地址：VITE_API_BASE 环境变量；默认同源（dev/preview 由 vite 代理到 127.0.0.1:5000）。
  * 后端不可用时前端优雅降级为本地记录标签 + 内置契约。
  */
+import { frameToMatrix, type AnalyzeFrameResponse } from './frame-inference.ts';
 
 const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? '').replace(/\/+$/, '');
 
@@ -16,9 +18,20 @@ export interface PostureSvmStatus {
   model_available: boolean;
   model_path: string;
 }
+export interface BodyPartitionStatus {
+  model_available: boolean;
+  model_path: string | null;
+  dataset_available: boolean;
+}
 export interface HealthInfo {
   status: string;
   posture_svm: PostureSvmStatus;
+  models: {
+    posture_svm: PostureSvmStatus;
+    posture_cnn: PostureSvmStatus;
+    body_partition: BodyPartitionStatus;
+    weak_area_enhance: { available: boolean };
+  };
 }
 export interface PosturePrediction {
   label_id: number;
@@ -106,25 +119,46 @@ export function predictPosture(
   timeoutMs = 4000,
   externalSignal?: AbortSignal,
 ): Promise<PosturePrediction> {
-  const rows = 44;
-  const cols = 24;
-  const matrix: number[][] = [];
-  for (let r = 0; r < rows; r++) {
-    const row: number[] = new Array(cols);
-    for (let c = 0; c < cols; c++) {
-      const v = frame[r * cols + c];
-      row[c] = typeof v === 'number' && Number.isFinite(v) ? v : 0;
-    }
-    matrix.push(row);
-  }
   return request<PosturePrediction>(
     '/api/posture/predict',
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pressure_matrix: matrix }),
+      body: JSON.stringify({ pressure_matrix: frameToMatrix(frame) }),
     },
     timeoutMs,
     externalSignal,
+  );
+}
+
+export interface AnalyzeOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  /** 睡姿模型选择：svm | cnn | ensemble（缺省 ensemble：任一可用即用，均不可用则降级） */
+  model?: 'svm' | 'cnn' | 'ensemble';
+}
+
+/**
+ * POST /api/frame/analyze —— 单帧聚合分析（睡姿 + 身体分区 + 弱区增强）。
+ * 后端对不可用模块返回模块级错误对象而非整体失败（HTTP 200），
+ * 调用方按模块降级（见 useFrameInference）。
+ */
+export function analyzeFrame(
+  frame: ArrayLike<number>,
+  options: AnalyzeOptions = {},
+): Promise<AnalyzeFrameResponse> {
+  return request<AnalyzeFrameResponse>(
+    '/api/frame/analyze',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pressure_matrix: frameToMatrix(frame),
+        features: ['posture', 'partition', 'enhance'],
+        model: options.model ?? 'ensemble',
+      }),
+    },
+    options.timeoutMs ?? 6000,
+    options.signal,
   );
 }

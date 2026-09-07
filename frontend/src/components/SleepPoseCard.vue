@@ -89,7 +89,7 @@ const confidencePct = computed(() =>
         <span class="pose-name">{{ pose }}</span>
         <span v-if="live && !isEmpty" class="live-dot" title="监测中" aria-hidden="true" />
         <span v-if="source === 'inference'" class="src-badge" :class="{ busy: predicting && confidencePct === null }">
-          {{ predicting && confidencePct === null ? '推理中' : 'SVM 推理' }}
+          {{ predicting && confidencePct === null ? '推理中' : '模型推理' }}
         </span>
       </div>
       <div class="duration num">

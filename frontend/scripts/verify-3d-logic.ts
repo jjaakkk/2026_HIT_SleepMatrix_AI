@@ -135,7 +135,7 @@ try {
     );
 
     const box = p.box as { min: number[]; max: number[] };
-    const inBedZ = box.min[2] > -1.15 && box.max[2] < 1.15;
+    const inBedZ = box.min[2] > -1.05 && box.max[2] < 1.05;
     check(`${names[i]} body within mattress length`, inBedZ, `z[${box.min[2].toFixed(2)},${box.max[2].toFixed(2)}]`);
   }
   check('all postures visible on screen (NDC)', allVisible, visibilityDetails.join(' | '));

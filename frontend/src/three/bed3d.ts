@@ -10,27 +10,20 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { AIRBAG_ZONES } from '../core/airbag';
+import { AIRBAG_RECTS, AIRBAG_ID_TO_COLOR, airbagRectTo3D } from '../core/airbag-layout';
 import { computeFrameMax, GAMMA, valueToColor } from '../render/heatmap';
 
 export type PostureId = 0 | 1 | 2 | 3;
 
 const ROWS = 44;
 const COLS = 24;
-const MATTRESS_LEN = 2.2; // 行方向（头→脚）
-const MATTRESS_WID = 1.2; // 列方向（左→右）
+// 床垫几何（米）：与气囊-传感器布置图一致（1800×2000mm）
+const MATTRESS_LEN = 2.0; // z 方向（头→脚）
+const MATTRESS_WID = 1.8; // x 方向（仰卧者左→右）
 const MATTRESS_THK = 0.16;
 const CELL_PX = 4; // 纹理每格像素（画布 96×176）
 const AUTO_SCALE_MIN = 80;
 const FIGURE_LEN = 1.72; // 人体身高（米），小于床垫长度
-
-/** 气囊分区（regionHint）→ 行区间（近似人体分区，与 2D 模块口径一致） */
-const AIRBAG_BANDS: Record<string, [number, number]> = {
-  肩背: [6, 18],
-  腰: [18, 26],
-  臀: [26, 33],
-  大腿: [33, 42],
-};
 
 interface BonePose {
   x?: number;
@@ -223,20 +216,14 @@ export class Bed3DScene {
     this.scene.add(top);
   }
 
-  /** 气囊分区示意条带（半透明，贴在床面上方） */
+  /** 气囊分区条带（真实布置图矩形坐标，半透明贴在床面上方） */
   private buildAirbagStrips(): void {
-    for (const zone of AIRBAG_ZONES) {
-      const band = AIRBAG_BANDS[zone.regionHint];
-      if (!band) continue;
-      const [r0, r1] = band;
-      const z0 = -MATTRESS_LEN / 2 + (r0 / ROWS) * MATTRESS_LEN;
-      const z1 = -MATTRESS_LEN / 2 + (r1 / ROWS) * MATTRESS_LEN;
-      const x0 = zone.side === '左半区' ? -MATTRESS_WID / 2 : 0;
-      const x1 = zone.side === '左半区' ? 0 : MATTRESS_WID / 2;
+    for (const rect of AIRBAG_RECTS) {
+      const { x0, x1, z0, z1 } = airbagRectTo3D(rect);
       const strip = new THREE.Mesh(
         new THREE.BoxGeometry(Math.abs(x1 - x0), 0.012, Math.abs(z1 - z0)),
         new THREE.MeshBasicMaterial({
-          color: zone.color,
+          color: AIRBAG_ID_TO_COLOR[rect.id] ?? '#888888',
           transparent: true,
           opacity: 0.3,
           depthWrite: false,

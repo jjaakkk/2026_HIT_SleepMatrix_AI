@@ -79,6 +79,7 @@ try {
   // ---- texture ----
   const tex = result.before.texture as {
     activeCells: number;
+    opaqueCells: number;
     coloredPx: number;
     samples: number[][];
   };
@@ -91,6 +92,26 @@ try {
       Math.abs(tex.samples[0][1] - result.expected[1]) < 2 &&
       Math.abs(tex.samples[0][2] - result.expected[2]) < 2,
     `first=${tex.samples[0]?.slice(0, 3)} want=${result.expected}`,
+  );
+
+  // 噪声淡出：v<10 的格应半透明（alpha<250），体压格全不透明 —— 保证 3D 热力图
+  // 不会把背景噪声铺满床面（与 2D 热力图 NOISE_FLOOR 一致，比例对齐人体模型）
+  const noiseTex = (await page.evaluate(async () => {
+    const bedPath2 = '/src/three/bed3d.ts';
+    const mod = await import(/* @vite-ignore */ bedPath2);
+    const scene = new mod.Bed3DScene(document.createElement('canvas'), { webgl: false });
+    const frame = new Float32Array(44 * 24);
+    frame[0] = 5; // 噪声格
+    frame[10 * 24 + 5] = 3; // 噪声格
+    frame[40 * 24 + 20] = 200; // 体压格
+    scene.setFrame(frame);
+    const info = scene.debugInfo() as Record<string, unknown>;
+    return info.texture;
+  })) as { activeCells: number; opaqueCells: number };
+  check(
+    '噪声格淡出（v<10 alpha<1）',
+    noiseTex.activeCells === 3 && noiseTex.opaqueCells === 1,
+    `activeCells=${noiseTex.activeCells} opaqueCells=${noiseTex.opaqueCells} (want 3 / 1)`,
   );
 
   // ---- model load ----

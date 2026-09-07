@@ -19,7 +19,7 @@ import {
   mmTo3D,
 } from '../core/airbag-layout';
 import type { AirbagState } from '../core/airbag';
-import { computeFrameMax, GAMMA, valueToColor } from '../render/heatmap';
+import { computeFrameMax, GAMMA, NOISE_FLOOR, valueToColor } from '../render/heatmap';
 
 export type PostureId = 0 | 1 | 2 | 3;
 
@@ -400,10 +400,13 @@ export class Bed3DScene {
         const v = frame[r * COLS + c];
         if (v <= 0) continue;
         const [rr, gg, bb] = valueToColor(v, scaleMax, gamma);
+        // 与 2D 热力图一致：背景噪声（<10）按比例淡出，避免噪声铺满床面
+        ctx.globalAlpha = Math.min(1, v / NOISE_FLOOR);
         ctx.fillStyle = `rgb(${Math.round(rr * 255)},${Math.round(gg * 255)},${Math.round(bb * 255)})`;
         ctx.fillRect(c * CELL_PX, r * CELL_PX, CELL_PX, CELL_PX);
       }
     }
+    ctx.globalAlpha = 1;
     this.texture.needsUpdate = true;
   }
 
@@ -466,6 +469,7 @@ export class Bed3DScene {
     const modelBox = this.modelRoot ? new THREE.Box3().setFromObject(this.fitGroup) : null;
     const image = this.ctx2d.getImageData(0, 0, this.canvas2d.width, this.canvas2d.height);
     let activeCells = 0;
+    let opaqueCells = 0;
     let coloredPx = 0;
     const samples: [number, number, number, number][] = [];
     for (let i = 0; i < image.data.length; i += 4) {
@@ -478,6 +482,7 @@ export class Bed3DScene {
       for (let c = 0; c < COLS; c++) {
         const idx = (r * CELL_PX * COLS * CELL_PX + c * CELL_PX) * 4;
         if (image.data[idx + 3] > 0) activeCells++;
+        if (image.data[idx + 3] >= 250) opaqueCells++;
       }
     }
     const joints: Record<string, number[]> = {};
@@ -555,7 +560,7 @@ export class Bed3DScene {
           }
         : null,
       figureScale: this.figureScale,
-      texture: { activeCells, coloredPx, samples },
+      texture: { activeCells, opaqueCells, coloredPx, samples },
     };
   }
 

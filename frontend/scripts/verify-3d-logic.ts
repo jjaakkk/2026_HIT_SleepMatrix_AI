@@ -154,10 +154,18 @@ try {
   const handAtSide =
     supJoints['mixamorigLeftHand'][2] > supJoints['mixamorigLeftArm'][2] &&
     Math.abs(supJoints['mixamorigLeftHand'][1] - supJoints['mixamorigLeftArm'][1]) < 0.25;
+  const rightHandAtSide =
+    supJoints['mixamorigRightHand'][2] > supJoints['mixamorigRightArm'][2] &&
+    Math.abs(supJoints['mixamorigRightHand'][1] - supJoints['mixamorigRightArm'][1]) < 0.25;
   check(
-    'supine arms at sides (hand toward feet)',
+    'supine left arm at side (hand toward feet)',
     handAtSide,
-    `hand z=${supJoints['mixamorigLeftHand'][2].toFixed(2)} shoulder z=${supJoints['mixamorigLeftArm'][2].toFixed(2)} hand y=${supJoints['mixamorigLeftHand'][1].toFixed(2)}`,
+    `hand z=${supJoints['mixamorigLeftHand'][2].toFixed(2)} shoulder z=${supJoints['mixamorigLeftArm'][2].toFixed(2)}`,
+  );
+  check(
+    'supine right arm at side (hand toward feet, not raised)',
+    rightHandAtSide,
+    `hand z=${supJoints['mixamorigRightHand'][2].toFixed(2)} shoulder z=${supJoints['mixamorigRightArm'][2].toFixed(2)} hand y=${supJoints['mixamorigRightHand'][1].toFixed(2)}`,
   );
 
   // lateral: top leg folded (left-lateral top = right leg; right-lateral top = left leg)
@@ -189,6 +197,15 @@ try {
     'lateral top foot rests above mattress (no penetration)',
     topFootOk,
     `left: ${latLJoints['mixamorigRightFoot'][1].toFixed(2)} / right: ${latRJoints['mixamorigLeftFoot'][1].toFixed(2)} (want >0.1)`,
+  );
+
+  // 侧卧上腿膝盖应抬离床面（胎儿式屈髋抬膝）
+  const kneeLiftL = latLJoints['mixamorigRightLeg'][1] - latLJoints['mixamorigRightUpLeg'][1];
+  const kneeLiftR = latRJoints['mixamorigLeftLeg'][1] - latRJoints['mixamorigLeftUpLeg'][1];
+  check(
+    'lateral top knee raised (fetal curl visible)',
+    kneeLiftL > 0.1 && kneeLiftR > 0.1,
+    `left: kneeLift=${kneeLiftL.toFixed(2)} / right: kneeLift=${kneeLiftR.toFixed(2)} (want >0.1)`,
   );
 
   // head toward the far end (-Z)

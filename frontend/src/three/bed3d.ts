@@ -54,12 +54,12 @@ const POSTURE_ROLL: Record<PostureId, number> = {
 
 /**
  * 各睡姿的肢体调整（mixamorig 骨骼局部旋转增量，弧度；在绑定四元数之上叠加）。
- * 实测（躺平世界）：肩 z=+1.35（左）/-1.35（右）= 手臂贴体侧指向脚端；
- * 髋/膝 x>0 = 腿向前屈曲（屈髋/屈膝抬脚）。
+ * 实测（躺平世界）：双肩 z=+1.35 均为手臂贴体侧指向脚端（左右臂坐标系同号，勿镜像）；
+ * 髋/膝 x>0 = 屈髋屈膝；髋 z 为外展（侧卧翻滚后变成垂直抬膝，z 符号左右镜像）。
  */
 const ARMS_DOWN: Record<string, BonePose> = {
   mixamorigLeftArm: { z: 1.35 },
-  mixamorigRightArm: { z: -1.35 },
+  mixamorigRightArm: { z: 1.35 },
 };
 
 const LIMB_POSES: Record<PostureId, Record<string, BonePose>> = {
@@ -67,28 +67,27 @@ const LIMB_POSES: Record<PostureId, Record<string, BonePose>> = {
   0: { ...ARMS_DOWN },
   // 俯卧：头转向一侧
   1: { ...ARMS_DOWN, mixamorigHead: { y: 0.7 } },
-  // 左侧卧（左半身贴床，上腿=右腿）：下腿微屈、上腿屈髋屈膝（胎儿式，
-  // 实测 hip=0.9/knee=0.9 时上腿脚部稳定搭在下腿上，knee>1.1 会穿透床面）；
-  // 手臂额外前抬（x>0），使持枪手臂翻滚后平放于床面而不是插进床垫
+  // 左侧卧（左半身贴床，上腿=右腿）：下腿微屈、上腿屈髋+外展抬膝+屈膝（胎儿式，
+  // 实测 hipX=1.0/hipZ=0.5/kneeX=1.0：膝盖抬 0.20、脚悬垂 y=0.81、fold=0.84）
   2: {
     ...ARMS_DOWN,
     mixamorigLeftArm: { z: 1.35, x: 0.55 },
-    mixamorigRightArm: { z: -1.35, x: 0.45 },
+    mixamorigRightArm: { z: 1.35, x: 0.45 },
     mixamorigHead: { y: 0.15 },
-    mixamorigLeftUpLeg: { x: 0.3 },
+    mixamorigLeftUpLeg: { x: 0.35 },
     mixamorigLeftLeg: { x: 0.5 },
-    mixamorigRightUpLeg: { x: 0.9 },
-    mixamorigRightLeg: { x: 0.9 },
+    mixamorigRightUpLeg: { x: 1.0, z: 0.5 },
+    mixamorigRightLeg: { x: 1.0 },
   },
-  // 右侧卧（右半身贴床，上腿=左腿）：镜像
+  // 右侧卧（右半身贴床，上腿=左腿）：镜像（髋 z 反号）
   3: {
     ...ARMS_DOWN,
     mixamorigLeftArm: { z: 1.35, x: 0.45 },
-    mixamorigRightArm: { z: -1.35, x: 0.55 },
+    mixamorigRightArm: { z: 1.35, x: 0.55 },
     mixamorigHead: { y: -0.15 },
-    mixamorigLeftUpLeg: { x: 0.9 },
-    mixamorigLeftLeg: { x: 0.9 },
-    mixamorigRightUpLeg: { x: 0.3 },
+    mixamorigLeftUpLeg: { x: 1.0, z: -0.5 },
+    mixamorigLeftLeg: { x: 1.0 },
+    mixamorigRightUpLeg: { x: 0.35 },
     mixamorigRightLeg: { x: 0.5 },
   },
 };

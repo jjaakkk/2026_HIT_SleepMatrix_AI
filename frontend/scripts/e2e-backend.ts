@@ -3,8 +3,8 @@
 // 后端不可达时跳过（退出码 0），由 audit:ui 覆盖离线降级路径。
 //
 // 数据模式语义（frontend/src/composables/useFrameInference.ts）：
-//   推理接入（默认）：/api/frame/analyze 逐帧分析（睡姿+分区+增强），结果驱动界面；
-//   数据展示：记录标签与标注渲染。
+//   实时推理（默认）：动态翻身序列作为模拟实时流循环播放，/api/frame/analyze 逐帧分析驱动界面；
+//   离线回放：播放预存数据，仅此模式显示 数据源/回放/受测者/姿态记录 选择器，用记录标签与标注渲染。
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -109,17 +109,16 @@ check(
   partitionOk === health.models.body_partition.model_available,
   JSON.stringify({ partitionOk, expected: health.models.body_partition.model_available }),
 );
-check('analyze 增强模块返回结果', enhanceOk, JSON.stringify(analyzeBody.enhanced ?? {}));
+check('analyze 增强模块返回结果', enhanceOk, 'enhanced_matrix 44×24');
 
 // ---- UI 层检查 ----
-// 数据模式语义（frontend/src/composables/useFrameInference.ts）：
-//   实时推理（默认）：动态翻身序列作为模拟实时流循环播放，/api/frame/analyze 逐帧分析驱动界面；
-//   离线回放：播放预存数据，仅此模式显示 数据源/回放/受测者/姿态记录 选择器，用记录标签与标注渲染。
+// 实时推理模式持续发起 /api 请求（串行自续），页面网络永不空闲：
+// 导航用 waitUntil:'load'，禁止 networkidle0。
 const browser = await puppeteer.launch({ headless: 'shell' });
 try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1600, height: 1000 });
-  await page.goto(`${BASE}?c=e2e#display=inference`, { waitUntil: 'networkidle0' });
+  await page.goto(`${BASE}?c=e2e#display=inference`, { waitUntil: 'load' });
   await page.waitForSelector('canvas');
   await sleep(1500); // 等待健康探测完成
 
@@ -149,7 +148,7 @@ try {
   const frameAfter = await page.$eval('.frame-num', (el) => el.textContent?.trim() ?? '');
   check('实时推理模式模拟流自动播放（帧号推进）', frameBefore !== frameAfter, `${frameBefore} → ${frameAfter}`);
 
-  await sleep(1500); // 等待逐帧分析（350ms 节流 + 网络往返）完成
+  await sleep(2000); // 等待逐帧分析（350ms 节流 + 网络往返）完成
 
   // 分区模型就绪 → 热力图区域与掩码应来自模型推理
   const partitionUi = await page.evaluate(() => ({
@@ -196,7 +195,7 @@ try {
       demoUi.sidebar.includes('姿态动作') &&
       demoUi.maskCells === 0 &&
       demoUi.chip.includes('区域 · 记录标注'),
-    JSON.stringify({ ...demoUi, sidebar: demoUi.sidebar.slice(0, 80) }),
+    JSON.stringify({ chip: demoUi.chip, maskCells: demoUi.maskCells }),
   );
 
   // 切回实时推理（按钮恢复可用性）
@@ -213,9 +212,7 @@ try {
   check('可切回「实时推理」模式', backState === 'true', String(backState));
 
   // 带回放参数的演示直链隐含「离线回放」模式
-  await page.goto(`${BASE}?c=e2e-playback#type=static&person=SAI&action=1&frame=10`, {
-    waitUntil: 'networkidle0',
-  });
+  await page.goto(`${BASE}?c=e2e-playback#type=static&person=SAI&action=1&frame=10`, { waitUntil: 'load' });
   await page.waitForSelector('canvas');
   await sleep(1500);
   const playbackState = await page.evaluate(() => ({

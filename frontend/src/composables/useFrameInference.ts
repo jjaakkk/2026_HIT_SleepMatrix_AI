@@ -6,7 +6,8 @@
  *   POST /api/frame/analyze（睡姿 + 身体分区 + 弱区增强一次返回）；
  * - init() 探测 /api/health 与 /api/contracts/posture；离线时每 15s 静默重试，
  *   后端起服后自动恢复在线（实时推理模式自动开始工作）；
- * - 分析请求 latest-wins（新帧到达即中止旧请求），350ms 节流；
+ * - 分析请求尾沿节流（350ms）+ 最新帧覆盖（latest-wins）+ 串行化：
+ *   在途请求完成后自动用最新帧继续，持续播放时不饿死、不反复中止旧请求；
  * - 后端对不可用模块返回模块级错误对象（HTTP 200）：仅降级对应模块
  *   （如睡姿模型缺失 → 睡姿回退记录标签，但分区/增强继续用推理结果）；
  * - 连续 3 次传输级失败（网络/超时/5xx）→ 后端标记离线并定时重连，
@@ -62,6 +63,8 @@ export function useFrameInference() {
 
   let retryTimer = 0;
   let throttleTimer = 0;
+  /** 节流窗口内最新待分析帧（latest-wins，自动播放时每帧更新） */
+  let pendingFrame: ArrayLike<number> | null = null;
   let inflightCtrl: AbortController | null = null;
   let transportFailStreak = 0;
   let disposed = false;
@@ -105,19 +108,30 @@ export function useFrameInference() {
     }, HEALTH_RETRY_MS);
   }
 
-  /** 队列化一帧分析（内部节流 + 中止旧请求） */
+  /**
+   * 队列化一帧分析（尾沿节流 + 最新帧覆盖 + 中止旧请求）。
+   *
+   * 定时器已挂起时只更新 pendingFrame（latest-wins），不重置定时器——
+   * 否则持续播放（帧号每 100ms 变化）会把 350ms 节流定时器无限重置，
+   * 推理请求永远无法发出（自动播放饿死问题）。
+   */
   function queueAnalyze(frame: ArrayLike<number>) {
     if (disposed || displayMode.value !== 'inference' || backend.value !== 'online') return;
     if (!frame || frame.length === 0) return;
-    window.clearTimeout(throttleTimer);
+    pendingFrame = frame;
+    if (throttleTimer !== 0) return;
     throttleTimer = window.setTimeout(() => {
-      void runAnalyze(frame);
+      throttleTimer = 0;
+      const next = pendingFrame;
+      pendingFrame = null;
+      if (next) void runAnalyze(next);
     }, ANALYZE_THROTTLE_MS);
   }
 
   async function runAnalyze(frame: ArrayLike<number>) {
-    if (disposed || backend.value !== 'online') return;
-    inflightCtrl?.abort();
+    // 串行化：在途请求未完成时不发新请求（pendingFrame 已保存最新帧，完成后自续），
+    // 避免持续播放时新请求反复中止即将完成的旧请求造成饿死。
+    if (disposed || backend.value !== 'online' || inflightCtrl !== null) return;
     const ctrl = new AbortController();
     inflightCtrl = ctrl;
     analyzing.value = true;
@@ -174,6 +188,15 @@ export function useFrameInference() {
       if (inflightCtrl === ctrl) {
         inflightCtrl = null;
         analyzing.value = false;
+        // 在途期间有新帧到达 → 立即用最新帧继续分析（自续，不饿死）
+        const next = pendingFrame;
+        pendingFrame = null;
+        if (next && !disposed && displayMode.value === 'inference' && backend.value === 'online') {
+          throttleTimer = window.setTimeout(() => {
+            throttleTimer = 0;
+            void runAnalyze(next);
+          }, 0);
+        }
       }
     }
   }

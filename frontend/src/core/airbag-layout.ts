@@ -211,3 +211,20 @@ export function mmToMatrixCell(xMm: number, yMm: number): { row: number; col: nu
     col: Math.min(23, Math.max(0, Math.round((xMm / BED_WIDTH_MM) * 23))),
   };
 }
+
+/** 气囊矩形 → 矩阵单元格范围（用于 2D 热力图叠加层，左闭右开） */
+export function airbagRectToCells(rect: AirbagRect): {
+  row0: number;
+  row1: number;
+  col0: number;
+  col1: number;
+} {
+  const a = mmToMatrixCell(rect.x1, rect.y1);
+  const b = mmToMatrixCell(rect.x2, rect.y2);
+  return {
+    row0: a.row,
+    row1: Math.min(43, b.row + 1),
+    col0: a.col,
+    col1: Math.min(23, b.col + 1),
+  };
+}

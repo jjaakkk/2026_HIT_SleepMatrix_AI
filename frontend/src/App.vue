@@ -2,7 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import SidebarControls from './components/SidebarControls.vue';
 import Bed3DView from './components/Bed3DView.vue';
+import Bed3DInline from './components/Bed3DInline.vue';
 import HeatmapPanel from './components/HeatmapPanel.vue';
+import Icon from './components/ui/Icon.vue';
 import InsightPanel from './components/InsightPanel.vue';
 import MetricsChart from './components/MetricsChart.vue';
 import AirbagPanel from './components/AirbagPanel.vue';
@@ -188,6 +190,8 @@ const selectedRegion = ref<number | null>(null);
 
 // 3D 睡姿演示叠加层
 const show3D = ref(false);
+/** 中下方面板视图：3D 演示持久展示，压力曲线按按钮切换 */
+const viewMode = ref<'3d' | 'chart'>('3d');
 const sleepPos3d = computed(() => {
   const p = currentAction.value?.sleepPos;
   return typeof p === 'number' && p >= 0 && p <= 3 ? p : 0;
@@ -496,22 +500,55 @@ watch(
               <PanelCard
                 class="chart-panel"
                 flush
-                title="压力趋势"
-                subtitle="净压力 · 扣除空载基线"
-                icon="activity"
+                :title="viewMode === '3d' ? '三维睡姿演示' : '压力趋势'"
+                :subtitle="viewMode === '3d' ? '人体模型 · 床垫热力图 · 气囊布置（实时联动）' : '净压力 · 扣除空载基线'"
+                :icon="viewMode === '3d' ? 'cube' : 'activity'"
               >
                 <div class="chart-inner">
-                  <PoseTimeline
-                    v-if="sourceType === 'dynamic' && showDynLabels && data"
-                    :labels="data.dynamic.labels"
-                    :frame-idx="frameIdx"
-                    @seek="(i) => controller?.seek(i)"
+                  <div class="view-switch" role="group" aria-label="视图切换">
+                    <button
+                      type="button"
+                      class="vs-btn"
+                      :class="{ on: viewMode === '3d' }"
+                      :aria-pressed="viewMode === '3d'"
+                      title="持久展示 3D 睡姿视图"
+                      @click="viewMode = '3d'"
+                    >
+                      <Icon name="cube" :size="12" />
+                      3D 视图
+                    </button>
+                    <button
+                      type="button"
+                      class="vs-btn"
+                      :class="{ on: viewMode === 'chart' }"
+                      :aria-pressed="viewMode === 'chart'"
+                      title="压力趋势折线图"
+                      @click="viewMode = 'chart'"
+                    >
+                      <Icon name="activity" :size="12" />
+                      压力曲线
+                    </button>
+                  </div>
+                  <Bed3DInline
+                    v-if="viewMode === '3d'"
+                    :frame="displayFrame"
+                    :sleep-pos="sleepPos3d"
+                    :airbag-states="airbagStates"
+                    @fullscreen="show3D = true"
                   />
-                  <MetricsChart
-                    :history="history"
-                    :frame-idx="frameIdx"
-                    :extra-series="extraSeries"
-                  />
+                  <template v-else>
+                    <PoseTimeline
+                      v-if="sourceType === 'dynamic' && showDynLabels && data"
+                      :labels="data.dynamic.labels"
+                      :frame-idx="frameIdx"
+                      @seek="(i) => controller?.seek(i)"
+                    />
+                    <MetricsChart
+                      :history="history"
+                      :frame-idx="frameIdx"
+                      :extra-series="extraSeries"
+                    />
+                  </template>
                 </div>
               </PanelCard>
             </section>
@@ -669,6 +706,46 @@ watch(
 .chart-inner :deep(.chart-root) {
   flex: 1;
   min-height: 0;
+}
+.chart-inner :deep(.bed3d-inline) {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 视图切换（3D 持久 / 压力曲线） */
+.view-switch {
+  display: flex;
+  gap: 5px;
+  flex: none;
+  padding-bottom: 8px;
+}
+.vs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 2px 10px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.vs-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+.vs-btn.on {
+  color: var(--accent);
+  border-color: var(--accent-soft-strong);
+  background: var(--accent-soft);
 }
 .ranking-panel {
   min-width: 0;

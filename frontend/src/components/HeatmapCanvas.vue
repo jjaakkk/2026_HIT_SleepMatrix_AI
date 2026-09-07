@@ -5,7 +5,9 @@ import type { HeatmapMode, ScaleMode } from '../render/heatmap.ts';
 import { COLS, ROWS, type BodyRegion, type SpinePoint } from '../core/types.ts';
 import { REGION_COLORS } from '../core/region-stats.ts';
 import {
+  AIRBAG_RECTS,
   AIRBAG_SENSORS,
+  AIRBAG_ID_TO_COLOR,
   REGION_COLORS as AIRBAG_REGION_COLORS,
   mmToMatrixCell,
   type AirbagSensor,
@@ -80,12 +82,25 @@ const sensorPx = computed(() => {
       x: px,
       y: py,
       color: AIRBAG_REGION_COLORS[s.region],
-      r: 3 + boost * 2.6,
+      r: 4 + boost * 2.4,
       boost,
       value: props.frame[cell.row * COLS + cell.col] ?? 0,
       active: hoverSensor.value?.id === s.id || props.selectedSensor === s.id,
     };
   });
+});
+
+/** 气囊矩形叠加层（mm 精确投影，比例与布置图一致） */
+const airbagRectsPx = computed(() => {
+  if (!props.showSensors || cssWidth.value === 0) return [];
+  return AIRBAG_RECTS.map((r) => ({
+    id: r.id,
+    color: AIRBAG_ID_TO_COLOR[r.id] ?? '#888888',
+    x: (r.x1 / 1800) * cssWidth.value,
+    y: (r.y1 / 2000) * cssHeight.value,
+    w: ((r.x2 - r.x1) / 1800) * cssWidth.value,
+    h: ((r.y2 - r.y1) / 2000) * cssHeight.value,
+  }));
 });
 
 // 区域矩形（px 坐标；覆盖到 x2/y2 格含）
@@ -156,7 +171,7 @@ function onMove(e: MouseEvent) {
       const sx = ((c.col + 0.5) / COLS) * cssWidth.value;
       const sy = ((c.row + 0.5) / ROWS) * cssHeight.value;
       const d = Math.hypot(px - sx, py - sy);
-      if (d < 11 && d < best) {
+      if (d < 12 && d < best) {
         best = d;
         hitSensor = s;
       }
@@ -293,6 +308,33 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize));
         >
           {{ rect.name }}
         </text>
+      </g>
+      <g v-if="airbagRectsPx.length" class="airbag-rects" pointer-events="none">
+        <g v-for="r in airbagRectsPx" :key="r.id">
+          <rect
+            :x="r.x"
+            :y="r.y"
+            :width="r.w"
+            :height="r.h"
+            :rx="4"
+            :fill="r.color"
+            fill-opacity="0.1"
+            :stroke="r.color"
+            stroke-opacity="0.55"
+            stroke-width="1.1"
+          />
+          <text
+            :x="r.x + r.w / 2"
+            :y="r.y + r.h / 2 + 3.5"
+            :fill="r.color"
+            font-size="9.5"
+            font-weight="700"
+            text-anchor="middle"
+            opacity="0.95"
+          >
+            {{ r.id }}
+          </text>
+        </g>
       </g>
       <g v-if="sensorPx.length" class="sensors">
         <g

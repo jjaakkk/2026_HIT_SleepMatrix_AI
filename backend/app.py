@@ -14,6 +14,8 @@ in :mod:`backend.api_utils`.
 
 from __future__ import annotations
 
+import re
+import time
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
@@ -26,6 +28,7 @@ from backend import config
 from backend.algorithms.body_partition.api import (
     create_blueprint as create_body_partition_blueprint,
 )
+from backend.algorithms.posture_cnn.data_io import DEFAULT_DATA_DIR, read_pressure_frames
 from backend.algorithms.posture_cnn.predictor import PostureCNNClassifier
 from backend.algorithms.posture_svm.inference import PostureSVMClassifier
 from backend.algorithms.weak_area_enhance.api import (
@@ -74,6 +77,13 @@ def create_app(
     app.extensions["posture_svm_classifier"] = svm_classifier
     app.extensions["posture_cnn_classifier"] = cnn_classifier
     app.extensions["body_partition"] = body_partition_resources
+    # 设备实时帧缓冲：POST /api/stream/ingest 写入，GET /api/stream/latest 读取
+    app.extensions["device_stream"] = {
+        "seq": -1,
+        "matrix": [],
+        "source": None,
+        "timestamp": None,
+    }
 
     # ------------------------------------------------------------------
     # Posture inference helpers (shared by /predict and /analyze)
@@ -217,6 +227,121 @@ def create_app(
         """Expose the validated language-neutral contract to the frontend."""
 
         return jsonify(CONTRACT), 200
+
+    @app.get("/api/dataset/stream")
+    def dataset_stream() -> tuple[Any, int]:
+        """Build a demo realtime stream from dataset pressure files.
+
+        Query: ``files`` (comma separated ``<subject>_<action>.txt`` names) and
+        ``limit`` (frames per file, 1-120, default 30). Returns the same
+        ``{person, bg, frames, labels}`` dynamic shape the frontend plays as
+        its realtime inference stream.
+        """
+
+        raw_files = request.args.get("files", "")
+        names = [name.strip() for name in raw_files.split(",") if name.strip()]
+        if not names:
+            return error_response(
+                "invalid_request",
+                "Provide `files` (comma separated, e.g. dgs_1.txt,dgs_10.txt).",
+                400,
+            )
+        if len(names) > 12:
+            return error_response("invalid_request", "At most 12 files per stream.", 400)
+        try:
+            limit = int(request.args.get("limit", "30"))
+        except ValueError:
+            return error_response("invalid_request", "`limit` must be an integer.", 400)
+        limit = max(1, min(limit, 120))
+
+        pattern = re.compile(r"^([A-Za-z0-9]+)_(\d{1,2})(\.txt)?$")
+        frames: list[list[float]] = []
+        labels: list[int] = []
+        used: list[str] = []
+        for name in names:
+            match = pattern.match(Path(name).name)
+            if match is None:
+                return error_response(
+                    "invalid_request",
+                    f"Bad file name {name!r}; expected <subject>_<action>.txt.",
+                    400,
+                )
+            subject, action_text = match.group(1), int(match.group(2))
+            if not 1 <= action_text <= 21:
+                return error_response(
+                    "invalid_request", f"Action out of range in {name!r}.", 400
+                )
+            source = DEFAULT_DATA_DIR / subject / f"{subject}_{action_text}.txt"
+            if not source.is_file():
+                return error_response(
+                    "not_found", f"Dataset file not found: {source.name}", 404
+                )
+            for frame in read_pressure_frames(source)[:limit]:
+                frames.append([float(value) for value in frame.flatten()])
+                labels.append(action_text)
+            used.append(f"{subject}_{action_text}")
+
+        if not frames:
+            return error_response("invalid_request", "No frames loaded.", 400)
+        return (
+            jsonify(
+                {
+                    "person": "+".join(used),
+                    "bg": [0.0] * 1056,
+                    "frames": frames,
+                    "labels": labels,
+                }
+            ),
+            200,
+        )
+
+    @app.post("/api/stream/ingest")
+    def stream_ingest() -> tuple[Any, int]:
+        """设备实时帧输入：把一帧 44×24 压力矩阵写入最新帧缓冲。
+
+        真实设备/采集程序逐帧 POST 到本端点；前端实时推理模式轮询
+        ``/api/stream/latest`` 获取最新帧并驱动推理。
+        """
+
+        try:
+            payload = request.get_json(silent=True)
+            matrix = pressure_matrix_from_payload(payload)
+        except EndpointError as exc:
+            return error_response(exc.code, exc.message, exc.status)
+        stream = app.extensions["device_stream"]
+        stream["seq"] += 1
+        stream["matrix"] = matrix.tolist()
+        stream["source"] = (
+            str(payload.get("source", "device"))
+            if isinstance(payload, dict)
+            else "device"
+        )
+        stream["timestamp"] = time.time()
+        return jsonify({"seq": stream["seq"], "received": True}), 200
+
+    @app.get("/api/stream/latest")
+    def stream_latest() -> tuple[Any, int]:
+        """读取最新设备帧；``after`` 指定已知帧号，无新帧时返回 has_frame=false。"""
+
+        try:
+            after = int(request.args.get("after", "-1"))
+        except ValueError:
+            return error_response("invalid_request", "`after` must be an integer.", 400)
+        stream = app.extensions["device_stream"]
+        if stream["seq"] <= after:
+            return jsonify({"has_frame": False, "seq": stream["seq"]}), 200
+        return (
+            jsonify(
+                {
+                    "has_frame": True,
+                    "seq": stream["seq"],
+                    "source": stream["source"],
+                    "timestamp": stream["timestamp"],
+                    "pressure_matrix": stream["matrix"],
+                }
+            ),
+            200,
+        )
 
     @app.post("/api/posture/predict")
     def predict_posture() -> tuple[Any, int]:

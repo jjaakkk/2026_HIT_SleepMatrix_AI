@@ -46,6 +46,20 @@ Vite + Vue 3 + TypeScript + Canvas（热力图 / 趋势图自绘）+ 自建设�
 - 空载背景单点可达 42、均值约 4-5：接触类指标先扣空载均值帧
 - 气囊无真实数据：条带布局按布置图编号（40/41/42、64/65/66、12/13）示意 + 模拟状态 + 预留接口
 
+## 3D 睡姿演示（三维可视化）
+
+侧栏"三维演示 → 打开 3D 睡姿视图"进入全屏叠加层（Esc 关闭）：
+
+- **床垫**：程序化生成，顶面 44×24 压力热力图纹理与当前回放帧实时联动
+  （复用 2D 热力图的 turbo 色带与自动量程），并叠加气囊分区示意条带（与 2D 气囊模块同口径）。
+- **人体**：Cesium `RiggedFigure`（CC BY 4.0，署名见 `public/models/CREDITS.md`），
+  骨骼旋转摆出仰卧/俯卧/左侧卧/右侧卧四种睡姿；睡姿默认跟随当前回放记录，
+  可手动切换；带转体过渡与呼吸起伏动画，转体过程中身体保持贴床（滚动效果）。
+- **技术**：three.js（`src/three/bed3d.ts` 场景模块 + `components/Bed3DView.vue` 叠加层）；
+  `three` 单独拆 chunk。WebGL 不可用时显示降级提示。
+- 验证：`npm run verify:3d:logic`（无 GPU 亦可跑：模型/骨骼/贴床/roll/纹理断言）；
+  `npm run verify:3d`（截图验证，需 WebGL 环境）。
+
 ## 开发（在 `frontend/` 目录内执行）
 
 ```bash
@@ -56,6 +70,8 @@ npm run demo     # Phase 1 数据读取自检（打印关键数字）
 npm run export:demo # 生成浏览器演示集 public/data/demo.json
 npm run build    # 类型检查 + 构建
 npm run capture  # 无头浏览器截图验证（需先启动 dev/preview 服务）
+npm run verify:3d # 3D 视图截图验证（需 WebGL 环境）
+npm run verify:3d:logic # 3D 场景逻辑验证（无 GPU 环境可用）
 npm run audit:ui # 无头浏览器 UI 审计（布局/对比度/交互/架构对齐，需先启动 preview）
 npm run e2e:backend # 前后端端到端联调（需后端 127.0.0.1:5000 + preview；后端未启动则跳过）
 ```

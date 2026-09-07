@@ -1,0 +1,455 @@
+/**
+ * 3D 睡姿演示场景（three.js）。
+ *
+ * - 程序化床垫：顶面 44×24 压力热力图实时纹理，与 2D 热力图共用
+ *   turbo 色带 / 自动量程（computeFrameMax + GAMMA.smooth）。
+ * - 气囊分区：按 AIRBAG_ZONES 布局投影为半透明条带（与 2D 气囊模块一致）。
+ * - 人体：Cesium RiggedFigure（CC BY 4.0，见 public/models/CREDITS.md），
+ *   骨骼旋转摆出仰卧/俯卧/左侧卧/右侧卧，附带呼吸起伏与转体过渡动画。
+ */
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { AIRBAG_ZONES } from '../core/airbag';
+import { computeFrameMax, GAMMA, valueToColor } from '../render/heatmap';
+
+export type PostureId = 0 | 1 | 2 | 3;
+
+const ROWS = 44;
+const COLS = 24;
+const MATTRESS_LEN = 2.2; // 行方向（头→脚）
+const MATTRESS_WID = 1.2; // 列方向（左→右）
+const MATTRESS_THK = 0.16;
+const CELL_PX = 4; // 纹理每格像素（画布 96×176）
+const AUTO_SCALE_MIN = 80;
+const FIGURE_LEN = 1.72; // 人体身高（米），小于床垫长度
+
+/** 气囊分区（regionHint）→ 行区间（近似人体分区，与 2D 模块口径一致） */
+const AIRBAG_BANDS: Record<string, [number, number]> = {
+  肩背: [6, 18],
+  腰: [18, 26],
+  臀: [26, 33],
+  大腿: [33, 42],
+};
+
+interface BonePose {
+  x?: number;
+  y?: number;
+  z?: number;
+}
+
+/**
+ * 绕身体长轴的翻转角（THREE 世界：GLTFLoader 已把模型转为 Y-up，立姿头 +Y、正面 +Z）。
+ * 结构：rollGroup（绕世界 Z=床长轴翻转）⊃ modelRoot（绕 X 转 -90° 躺平，头→-Z）。
+ * 仰卧=0（正面朝上）、俯卧=π、左侧卧=-π/2（左半身贴床）、右侧卧=+π/2。
+ */
+const POSTURE_ROLL: Record<PostureId, number> = {
+  0: 0,
+  1: Math.PI,
+  2: -Math.PI / 2,
+  3: Math.PI / 2,
+};
+
+/**
+ * 各睡姿的肢体调整（骨骼局部旋转，弧度；Y-up 立姿坐标系：正面 +Z）。
+ * 绕 X 正 = 大腿/手臂向 +Z（前）摆动，绕 X 负 = 向后摆（屈膝/垂臂），绕 Y = 头侧转。
+ */
+const LIMB_POSES: Record<PostureId, Record<string, BonePose>> = {
+  // 仰卧：绑定姿势即双臂贴体侧，仅轻微外展
+  0: {
+    arm_joint_R_1: { x: 0.1 },
+    arm_joint_L_1: { x: 0.1 },
+    leg_joint_R_1: { x: -0.06 },
+    leg_joint_L_1: { x: -0.06 },
+  },
+  // 俯卧：头侧转
+  1: {
+    neck_joint_2: { y: 0.55 },
+    arm_joint_R_1: { x: 0.15 },
+    arm_joint_L_1: { x: 0.15 },
+  },
+  // 左侧卧：屈髋屈膝（胎儿式）、手臂前收
+  2: {
+    leg_joint_R_1: { x: 0.5 },
+    leg_joint_R_2: { x: -0.95 },
+    leg_joint_L_1: { x: 0.28 },
+    leg_joint_L_2: { x: -0.55 },
+    arm_joint_R_1: { x: -1.0 },
+    arm_joint_R_2: { x: -0.7 },
+    arm_joint_L_1: { x: -0.8 },
+    arm_joint_L_2: { x: -0.6 },
+  },
+  // 右侧卧：镜像
+  3: {
+    leg_joint_R_1: { x: 0.28 },
+    leg_joint_R_2: { x: -0.55 },
+    leg_joint_L_1: { x: 0.5 },
+    leg_joint_L_2: { x: -0.95 },
+    arm_joint_R_1: { x: -0.8 },
+    arm_joint_R_2: { x: -0.6 },
+    arm_joint_L_1: { x: -1.0 },
+    arm_joint_L_2: { x: -0.7 },
+  },
+};
+
+export interface Bed3DOptions {
+  /** 创建 WebGL 渲染器；false 时仅构建场景图（用于无 GPU 环境的逻辑验证） */
+  webgl?: boolean;
+}
+
+export class Bed3DScene {
+  private renderer: THREE.WebGLRenderer | null = null;
+  private scene = new THREE.Scene();
+  private camera: THREE.PerspectiveCamera | null = null;
+  private controls: OrbitControls | null = null;
+  private canvas2d: HTMLCanvasElement;
+  private ctx2d: CanvasRenderingContext2D;
+  private texture: THREE.CanvasTexture;
+  private modelRoot: THREE.Group | null = null;
+  private rollGroup: THREE.Group | null = null;
+  private bones = new Map<string, THREE.Bone>();
+  private pose: PostureId = 0;
+  private targetRoll = 0;
+  private breathing = true;
+  private baseY = 0;
+  private rafId = 0;
+  private disposed = false;
+  private clock = new THREE.Clock();
+  private figureRawBox: THREE.Box3 | null = null;
+  private figureScaledBox: THREE.Box3 | null = null;
+  private figureScale = 1;
+
+  constructor(
+    private canvas: HTMLCanvasElement,
+    options: Bed3DOptions = {},
+  ) {
+    if (options.webgl !== false) {
+      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
+    this.scene.background = new THREE.Color('#0a1016');
+
+    if (this.renderer) {
+      this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 60);
+      this.camera.position.set(2.9, 1.9, 3.3);
+
+      this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+      this.controls.target.set(0, 0.35, 0.05);
+      this.controls.enableDamping = true;
+      this.controls.dampingFactor = 0.08;
+      this.controls.minDistance = 1.2;
+      this.controls.maxDistance = 8;
+      this.controls.maxPolarAngle = Math.PI * 0.52;
+
+      // 灯光：半球环境 + 主方向光（投影）+ 冷色轮廓光
+      this.scene.add(new THREE.HemisphereLight(0xdce8f4, 0x0c1520, 1.0));
+      const key = new THREE.DirectionalLight(0xffffff, 1.7);
+      key.position.set(3, 5, 2.5);
+      key.castShadow = true;
+      key.shadow.mapSize.set(1024, 1024);
+      key.shadow.camera.left = -2.4;
+      key.shadow.camera.right = 2.4;
+      key.shadow.camera.top = 3;
+      key.shadow.camera.bottom = -2;
+      key.shadow.camera.far = 20;
+      key.shadow.bias = -0.0002;
+      this.scene.add(key);
+      const rim = new THREE.DirectionalLight(0x9fd4c3, 0.55);
+      rim.position.set(-3, 2.5, -2);
+      this.scene.add(rim);
+    }
+
+    // 地面
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(30, 30),
+      new THREE.MeshStandardMaterial({ color: '#0c131b', roughness: 0.95 }),
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.002;
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+
+    // 热力图纹理画布（行 0=头端在画布顶部）
+    this.canvas2d = document.createElement('canvas');
+    this.canvas2d.width = COLS * CELL_PX;
+    this.canvas2d.height = ROWS * CELL_PX;
+    this.ctx2d = this.canvas2d.getContext('2d')!;
+    this.texture = new THREE.CanvasTexture(this.canvas2d);
+    this.texture.magFilter = THREE.NearestFilter;
+    this.texture.minFilter = THREE.LinearFilter;
+    this.texture.colorSpace = THREE.SRGBColorSpace;
+
+    this.buildMattress();
+    this.buildAirbagStrips();
+    this.setFrame(new Float32Array(ROWS * COLS));
+  }
+
+  /** 床垫：实体底座 + 顶面热力图平面（显式 UV，头端在 -Z 远端） */
+  private buildMattress(): void {
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(MATTRESS_LEN, MATTRESS_THK, MATTRESS_WID),
+      new THREE.MeshStandardMaterial({ color: '#27313c', roughness: 0.9 }),
+    );
+    body.position.y = MATTRESS_THK / 2;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    this.scene.add(body);
+
+    const topGeo = new THREE.PlaneGeometry(MATTRESS_LEN, MATTRESS_WID);
+    const uv = topGeo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) {
+      const x = topGeo.attributes.position.getX(i);
+      const z = topGeo.attributes.position.getZ(i);
+      // 行 0（头）→ z=-L/2；列 0 → x=-W/2
+      uv.setXY(i, 0.5 + x / MATTRESS_WID, 0.5 - z / MATTRESS_LEN);
+    }
+    topGeo.rotateX(-Math.PI / 2);
+    const top = new THREE.Mesh(
+      topGeo,
+      new THREE.MeshBasicMaterial({ map: this.texture, toneMapped: false }),
+    );
+    top.position.y = MATTRESS_THK + 0.002;
+    this.scene.add(top);
+  }
+
+  /** 气囊分区示意条带（半透明，贴在床面上方） */
+  private buildAirbagStrips(): void {
+    for (const zone of AIRBAG_ZONES) {
+      const band = AIRBAG_BANDS[zone.regionHint];
+      if (!band) continue;
+      const [r0, r1] = band;
+      const z0 = -MATTRESS_LEN / 2 + (r0 / ROWS) * MATTRESS_LEN;
+      const z1 = -MATTRESS_LEN / 2 + (r1 / ROWS) * MATTRESS_LEN;
+      const x0 = zone.side === '左半区' ? -MATTRESS_WID / 2 : 0;
+      const x1 = zone.side === '左半区' ? 0 : MATTRESS_WID / 2;
+      const strip = new THREE.Mesh(
+        new THREE.BoxGeometry(Math.abs(x1 - x0), 0.012, Math.abs(z1 - z0)),
+        new THREE.MeshBasicMaterial({
+          color: zone.color,
+          transparent: true,
+          opacity: 0.3,
+          depthWrite: false,
+        }),
+      );
+      strip.position.set((x0 + x1) / 2, MATTRESS_THK + 0.014, (z0 + z1) / 2);
+      this.scene.add(strip);
+    }
+  }
+
+  /** 加载人体模型并摆出当前睡姿 */
+  async loadBody(url: string): Promise<void> {
+    const gltf = await new GLTFLoader().loadAsync(url);
+    const model = gltf.scene;
+
+    // GLTFLoader 已转为 Y-up：身高 = y 轴跨度
+    const box = new THREE.Box3().setFromObject(model);
+    this.figureRawBox = box.clone();
+    const height = Math.max(box.max.y - box.min.y, 0.01);
+    this.figureScale = FIGURE_LEN / height;
+    model.scale.setScalar(this.figureScale);
+    // 水平居中（x），y 原点移到脚底
+    const box2 = new THREE.Box3().setFromObject(model);
+    this.figureScaledBox = box2.clone();
+    model.position.x = -(box2.min.x + box2.max.x) / 2;
+    model.position.y = -box2.min.y;
+
+    model.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.castShadow = true;
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const m of mats) {
+          const mat = m as THREE.MeshStandardMaterial;
+          if ('color' in mat && mat.color) mat.color.set('#a9b6c4');
+          if ('roughness' in mat) mat.roughness = 0.55;
+        }
+      }
+      const bone = obj as THREE.Bone;
+      if (bone.isBone) this.bones.set(bone.name, bone);
+    });
+
+    // rollGroup（绕世界 Z=床长轴翻转）⊃ modelRoot（绕 X 转 -90° 躺平：头→-Z）
+    this.rollGroup = new THREE.Group();
+    this.modelRoot = new THREE.Group();
+    this.modelRoot.rotation.x = -Math.PI / 2;
+    this.modelRoot.add(model);
+    this.rollGroup.add(this.modelRoot);
+    this.scene.add(this.rollGroup);
+
+    this.applyPose(this.pose, true);
+    this.fitToMattress();
+  }
+
+  /** 初始摆位：水平居中、脚端距床边 3 行、最低点贴住床面 */
+  private fitToMattress(): void {
+    if (!this.rollGroup || !this.modelRoot) return;
+    const box = new THREE.Box3().setFromObject(this.rollGroup);
+    const footEnd = MATTRESS_LEN / 2 - (3 / ROWS) * MATTRESS_LEN;
+    this.modelRoot.position.x -= (box.min.x + box.max.x) / 2;
+    this.modelRoot.position.y += MATTRESS_THK + 0.012 - box.min.y;
+    this.modelRoot.position.z += footEnd - box.max.z;
+    this.baseY = this.modelRoot.position.y;
+  }
+
+  /** 更新床垫热力图纹理（1056 值，行优先） */
+  setFrame(frame: ArrayLike<number>): void {
+    const ctx = this.ctx2d;
+    ctx.clearRect(0, 0, this.canvas2d.width, this.canvas2d.height);
+    if (!frame || frame.length < ROWS * COLS) {
+      this.texture.needsUpdate = true;
+      return;
+    }
+    const scaleMax = Math.max(computeFrameMax(frame), AUTO_SCALE_MIN);
+    const gamma = GAMMA.smooth;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const v = frame[r * COLS + c];
+        if (v <= 0) continue;
+        const [rr, gg, bb] = valueToColor(v, scaleMax, gamma);
+        ctx.fillStyle = `rgb(${Math.round(rr * 255)},${Math.round(gg * 255)},${Math.round(bb * 255)})`;
+        ctx.fillRect(c * CELL_PX, r * CELL_PX, CELL_PX, CELL_PX);
+      }
+    }
+    this.texture.needsUpdate = true;
+  }
+
+  setPosture(posture: PostureId): void {
+    if (posture < 0 || posture > 3) posture = 0;
+    this.applyPose(posture, false);
+  }
+
+  setBreathing(on: boolean): void {
+    this.breathing = on;
+  }
+
+  /** 调试信息（供自动化验证读取场景真实状态） */
+  debugInfo(): Record<string, unknown> {
+    const roll = this.rollGroup ? this.rollGroup.rotation.z : 0;
+    const modelBox = this.modelRoot ? new THREE.Box3().setFromObject(this.modelRoot) : null;
+    const image = this.ctx2d.getImageData(0, 0, this.canvas2d.width, this.canvas2d.height);
+    let activeCells = 0;
+    let coloredPx = 0;
+    const samples: [number, number, number, number][] = [];
+    for (let i = 0; i < image.data.length; i += 4) {
+      if (image.data[i + 3] > 0) {
+        coloredPx++;
+        if (samples.length < 3) samples.push([image.data[i], image.data[i + 1], image.data[i + 2], image.data[i + 3]]);
+      }
+    }
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const idx = (r * CELL_PX * COLS * CELL_PX + c * CELL_PX) * 4;
+        if (image.data[idx + 3] > 0) activeCells++;
+      }
+    }
+    return {
+      webgl: this.renderer !== null,
+      camera: this.camera ? this.camera.position.toArray() : null,
+      target: this.controls ? this.controls.target.toArray() : null,
+      fov: this.camera ? this.camera.fov : null,
+      canvasBuf: this.renderer ? [this.renderer.domElement.width, this.renderer.domElement.height] : null,
+      modelLoaded: this.modelRoot !== null,
+      boneCount: this.bones.size,
+      bones: [...this.bones.keys()].sort(),
+      pose: this.pose,
+      roll,
+      modelBox: modelBox
+        ? { min: modelBox.min.toArray(), max: modelBox.max.toArray() }
+        : null,
+      figureRawBox: this.figureRawBox
+        ? {
+            min: this.figureRawBox.min.toArray(),
+            max: this.figureRawBox.max.toArray(),
+          }
+        : null,
+      figureScaledBox: this.figureScaledBox
+        ? {
+            min: this.figureScaledBox.min.toArray(),
+            max: this.figureScaledBox.max.toArray(),
+          }
+        : null,
+      figureScale: this.figureScale,
+      texture: { activeCells, coloredPx, samples },
+    };
+  }
+
+  private applyPose(posture: PostureId, immediate: boolean): void {
+    this.pose = posture;
+    this.targetRoll = POSTURE_ROLL[posture];
+    if (!this.rollGroup) return;
+
+    // 先复位所有肢体骨骼，再应用目标姿态
+    for (const bone of this.bones.values()) bone.rotation.set(0, 0, 0);
+    const limb = LIMB_POSES[posture];
+    for (const [name, rot] of Object.entries(limb)) {
+      const bone = this.bones.get(name);
+      if (!bone) continue;
+      bone.rotation.set(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0);
+    }
+    if (immediate) this.rollGroup.rotation.z = this.targetRoll;
+  }
+
+  start(): void {
+    this.clock.start();
+    const tick = () => {
+      if (this.disposed) return;
+      this.resize();
+      const t = this.clock.getElapsedTime();
+      if (this.modelRoot && this.rollGroup) {
+        // 转体平滑过渡
+        const cur = this.rollGroup.rotation.z;
+        const diff = this.targetRoll - cur;
+        if (Math.abs(diff) > 1e-4) {
+          this.rollGroup.rotation.z = cur + diff * Math.min(1, 0.1);
+        }
+        // 贴床：转体过程中始终保持当前摆姿最低点贴着床面（滚动贴床效果）
+        const box = new THREE.Box3().setFromObject(this.rollGroup);
+        this.modelRoot.position.y += MATTRESS_THK + 0.012 - box.min.y;
+        this.baseY = this.modelRoot.position.y;
+        // 呼吸起伏：整体轻微上下浮动
+        if (this.breathing) {
+          const amp = 0.012 * (this.pose >= 2 ? 0.5 : 1);
+          this.modelRoot.position.y = this.baseY + Math.sin(t * 1.7) * amp;
+        }
+      }
+      this.controls?.update();
+      if (this.renderer && this.camera) {
+        this.renderer.render(this.scene, this.camera);
+      }
+      this.rafId = requestAnimationFrame(tick);
+    };
+    this.rafId = requestAnimationFrame(tick);
+  }
+
+  private resize(): void {
+    if (!this.renderer || !this.camera) return;
+    const w = this.canvas.clientWidth || 1;
+    const h = this.canvas.clientHeight || 1;
+    if (
+      this.canvas.width !== Math.floor(w * this.renderer.getPixelRatio()) ||
+      this.canvas.height !== Math.floor(h * this.renderer.getPixelRatio())
+    ) {
+      this.renderer.setSize(w, h, false);
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    cancelAnimationFrame(this.rafId);
+    this.controls?.dispose();
+    this.scene.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.geometry?.dispose();
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const m of mats) m.dispose();
+      }
+    });
+    this.texture.dispose();
+    this.renderer?.dispose();
+  }
+}

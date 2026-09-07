@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import SidebarControls from './components/SidebarControls.vue';
+import Bed3DView from './components/Bed3DView.vue';
 import HeatmapPanel from './components/HeatmapPanel.vue';
 import InsightPanel from './components/InsightPanel.vue';
 import MetricsChart from './components/MetricsChart.vue';
@@ -183,6 +184,13 @@ const showSpine = ref(true);
 const showCalf = ref(false);
 const showDynLabels = ref(false);
 const selectedRegion = ref<number | null>(null);
+
+// 3D 睡姿演示叠加层
+const show3D = ref(false);
+const sleepPos3d = computed(() => {
+  const p = currentAction.value?.sleepPos;
+  return typeof p === 'number' && p >= 0 && p <= 3 ? p : 0;
+});
 
 // 气囊模拟源（真实设备就绪后换成实现同一接口的适配器）
 const airbagSource = new SimulatedAirbagSource();
@@ -393,6 +401,7 @@ watch(
                 @update:show-calf="showCalf = $event"
                 @update:show-dyn-labels="showDynLabels = $event"
                 @update:pose-source="inference.setPoseSource($event)"
+                @open-3d="show3D = true"
               />
             </aside>
 
@@ -508,6 +517,14 @@ watch(
           <p class="loading-text">正在加载监测数据…</p>
         </div>
       </Transition>
+
+      <Bed3DView
+        v-if="show3D"
+        :frame="displayFrame"
+        :sleep-pos="sleepPos3d"
+        :source-label="sourceLabel"
+        @close="show3D = false"
+      />
     </div>
   </div>
 </template>

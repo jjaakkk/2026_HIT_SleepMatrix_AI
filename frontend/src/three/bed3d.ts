@@ -39,50 +39,57 @@ interface BonePose {
 }
 
 /**
- * 绕身体长轴的翻转角（THREE 世界：模型立姿头 +Y；由骨骼命名与脚趾关节位置推断正面朝 -Z，
- * 即立姿时左半身 = +X、右半身 = -X）。
+ * 绕身体长轴的翻转角（模型为 Mixamo rig，GLTFLoader 加载后 Y-up：
+ * 立姿头 +Y、正面 +Z（护目镜侧）、左半身 -X）。
  * 结构：fitGroup（世界轴对齐）⊃ rollGroup（绕世界 Z=床长轴翻转）⊃ modelRoot（绕 X 转 -90° 躺平，头→-Z）。
- * roll=0 时正面朝下（俯卧）；仰卧=π、左侧卧=-π/2（左半身 +X 贴床）、右侧卧=+π/2。
+ * roll=0 正面朝上（仰卧）；俯卧=π、左侧卧=+π/2（左半身 -X 贴床）、右侧卧=-π/2。
+ * （实测：rotX=-π/2 时骨架头 z<0 脚 z>0 平躺；roll 符号按左半身 -X 推导）
  */
 const POSTURE_ROLL: Record<PostureId, number> = {
-  0: Math.PI,
-  1: 0,
-  2: -Math.PI / 2,
-  3: Math.PI / 2,
+  0: 0,
+  1: Math.PI,
+  2: Math.PI / 2,
+  3: -Math.PI / 2,
 };
 
 /**
- * 各睡姿的肢体调整（骨骼局部旋转，弧度；Y-up 立姿坐标系：正面 +Z）。
- * 绕 X 正 = 大腿/手臂向 +Z（前）摆动，绕 X 负 = 向后摆（屈膝/垂臂），绕 Y = 头侧转。
+ * 各睡姿的肢体调整（mixamorig 骨骼局部旋转增量，弧度；在绑定四元数之上叠加）。
+ * 实测（躺平世界）：肩 z=+1.35（左）/-1.35（右）= 手臂贴体侧指向脚端；
+ * 髋/膝 x>0 = 腿向前屈曲（屈髋/屈膝抬脚）。
  */
+const ARMS_DOWN: Record<string, BonePose> = {
+  mixamorigLeftArm: { z: 1.35 },
+  mixamorigRightArm: { z: -1.35 },
+};
+
 const LIMB_POSES: Record<PostureId, Record<string, BonePose>> = {
-  // 仰卧：绑定姿势即双臂贴体侧平躺，无需调整
-  0: {},
-  // 俯卧：仅头侧转（面部朝下时转头更自然）
-  1: {
-    neck_joint_2: { y: 0.6 },
-  },
-  // 左侧卧：屈髋屈膝（胎儿式）、手臂前收
+  // 仰卧：双臂贴体侧、双腿伸直
+  0: { ...ARMS_DOWN },
+  // 俯卧：头转向一侧
+  1: { ...ARMS_DOWN, mixamorigHead: { y: 0.7 } },
+  // 左侧卧（左半身贴床，上腿=右腿）：下腿微屈、上腿屈髋屈膝（胎儿式，
+  // 实测 hip=0.9/knee=0.9 时上腿脚部稳定搭在下腿上，knee>1.1 会穿透床面）；
+  // 手臂额外前抬（x>0），使持枪手臂翻滚后平放于床面而不是插进床垫
   2: {
-    leg_joint_R_1: { x: 0.5 },
-    leg_joint_R_2: { x: -0.95 },
-    leg_joint_L_1: { x: 0.28 },
-    leg_joint_L_2: { x: -0.55 },
-    arm_joint_R_1: { x: -1.0 },
-    arm_joint_R_2: { x: -0.7 },
-    arm_joint_L_1: { x: -0.8 },
-    arm_joint_L_2: { x: -0.6 },
+    ...ARMS_DOWN,
+    mixamorigLeftArm: { z: 1.35, x: 0.55 },
+    mixamorigRightArm: { z: -1.35, x: 0.45 },
+    mixamorigHead: { y: 0.15 },
+    mixamorigLeftUpLeg: { x: 0.3 },
+    mixamorigLeftLeg: { x: 0.5 },
+    mixamorigRightUpLeg: { x: 0.9 },
+    mixamorigRightLeg: { x: 0.9 },
   },
-  // 右侧卧：镜像
+  // 右侧卧（右半身贴床，上腿=左腿）：镜像
   3: {
-    leg_joint_R_1: { x: 0.28 },
-    leg_joint_R_2: { x: -0.55 },
-    leg_joint_L_1: { x: 0.5 },
-    leg_joint_L_2: { x: -0.95 },
-    arm_joint_R_1: { x: -0.8 },
-    arm_joint_R_2: { x: -0.6 },
-    arm_joint_L_1: { x: -1.0 },
-    arm_joint_L_2: { x: -0.7 },
+    ...ARMS_DOWN,
+    mixamorigLeftArm: { z: 1.35, x: 0.45 },
+    mixamorigRightArm: { z: -1.35, x: 0.55 },
+    mixamorigHead: { y: -0.15 },
+    mixamorigLeftUpLeg: { x: 0.9 },
+    mixamorigLeftLeg: { x: 0.9 },
+    mixamorigRightUpLeg: { x: 0.3 },
+    mixamorigRightLeg: { x: 0.5 },
   },
 };
 
@@ -108,6 +115,11 @@ export class Bed3DScene {
   private targetRoll = 0;
   private breathing = true;
   private baseY = 0;
+  /** 站立摆姿下半厚（z 向）/半宽（x 向），用于躯干贴床偏移 */
+  private halfDepth = 0.2;
+  private halfWidth = 0.25;
+  /** 各骨骼绑定姿态四元数（摆姿"复位"必须恢复绑定值，而非置零） */
+  private bindQuats = new Map<string, THREE.Quaternion>();
   private rafId = 0;
   private disposed = false;
   private clock = new THREE.Clock();
@@ -257,16 +269,53 @@ export class Bed3DScene {
       const mesh = obj as THREE.Mesh;
       if (mesh.isMesh) {
         mesh.castShadow = true;
+        // 保留模型自带贴图材质（士兵角色），仅微调粗糙度
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const m of mats) {
           const mat = m as THREE.MeshStandardMaterial;
-          if ('color' in mat && mat.color) mat.color.set('#a9b6c4');
-          if ('roughness' in mat) mat.roughness = 0.55;
+          if ('roughness' in mat && mat.map === null) mat.roughness = 0.6;
         }
       }
       const bone = obj as THREE.Bone;
-      if (bone.isBone) this.bones.set(bone.name, bone);
+      if (bone.isBone) {
+        this.bones.set(bone.name, bone);
+        this.bindQuats.set(bone.name, bone.quaternion.clone());
+      }
     });
+
+    // 站立姿态下应用肢体摆姿，并用蒙皮后的世界包围盒测量半厚/半宽
+    // （贴床偏移依据：仰卧/俯卧用半厚=前后深度(z)，侧卧用半宽=躯干宽度(x)。
+    //  注意 Box3.setFromObject 不应用蒙皮，必须用 SkinnedMesh.computeBoundingBox）
+    this.applyLimbPose(this.pose);
+    const posedBoxes: THREE.Box3[] = [];
+    model.traverse((obj) => {
+      const skinned = obj as THREE.SkinnedMesh;
+      if (!skinned.isSkinnedMesh) return;
+      // 渲染器每帧会自动 skeleton.update()；无渲染环境需手动调用，
+      // 否则 computeBoundingBox 使用的是绑定姿势（T-pose 臂展）
+      skinned.skeleton.update();
+      skinned.computeBoundingBox();
+      const local = skinned.boundingBox;
+      if (!local) return;
+      skinned.updateWorldMatrix(true, false);
+      posedBoxes.push(local.clone().applyMatrix4(skinned.matrixWorld));
+    });
+    const posedBox = posedBoxes.length
+      ? posedBoxes.reduce((acc, box) => acc.union(box))
+      : null;
+    if (posedBox) {
+      this.halfDepth = Math.max((posedBox.max.z - posedBox.min.z) / 2, 0.05);
+    }
+    // 半宽以肩关节间距为准（蒙皮包围盒受装备/手臂干扰不可靠；肩关节原点不随手部旋转移动）
+    {
+      const shoulderL = this.bones.get('mixamorigLeftArm');
+      const shoulderR = this.bones.get('mixamorigRightArm');
+      if (shoulderL && shoulderR) {
+        const lw = shoulderL.getWorldPosition(new THREE.Vector3());
+        const rw = shoulderR.getWorldPosition(new THREE.Vector3());
+        this.halfWidth = Math.max(Math.abs(rw.x - lw.x) / 2 + 0.06, 0.15);
+      }
+    }
 
     // fitGroup（世界轴对齐，承载贴床/呼吸位移）⊃ rollGroup（绕世界 Z=床长轴翻转）
     // ⊃ modelRoot（绕 X 转 -90° 躺平：头→-Z）
@@ -281,14 +330,42 @@ export class Bed3DScene {
     this.fitToMattress();
   }
 
-  /** 初始摆位：水平居中、脚端距床边 3 行、最低点贴住床面（世界坐标系） */
+  /** 初始摆位：水平居中、脚端距床边 3 行、躯干贴住床面（世界坐标系） */
   private fitToMattress(): void {
     if (!this.modelRoot) return;
     const box = new THREE.Box3().setFromObject(this.fitGroup);
     const footEnd = MATTRESS_LEN / 2 - (3 / ROWS) * MATTRESS_LEN;
     this.modelRoot.position.x -= (box.min.x + box.max.x) / 2;
     this.modelRoot.position.z += footEnd - box.max.z;
-    this.fitGroup.position.y += MATTRESS_THK + 0.012 - box.min.y;
+    this.fitBodyHeight();
+  }
+
+  /** 躯干支撑：躯干中线关节最低点（世界 y）与当前贴床偏移（随 roll 在 半厚↔半宽 间过渡） */
+  private trunkSupport(): { minY: number; offset: number } {
+    let minY = Infinity;
+    for (const name of [
+      'mixamorigHips',
+      'mixamorigSpine',
+      'mixamorigSpine1',
+      'mixamorigSpine2',
+      'mixamorigNeck',
+      'mixamorigHead',
+    ]) {
+      const bone = this.bones.get(name);
+      if (!bone) continue;
+      const y = bone.getWorldPosition(new THREE.Vector3()).y;
+      if (y < minY) minY = y;
+    }
+    if (!Number.isFinite(minY)) return { minY: 0, offset: this.halfDepth };
+    const rollFactor = this.rollGroup ? Math.abs(Math.sin(this.rollGroup.rotation.z)) : 0;
+    const offset = this.halfDepth + (this.halfWidth - this.halfDepth) * rollFactor;
+    return { minY, offset };
+  }
+
+  /** 把躯干支撑面贴到床面（fitGroup 不旋转，修正始终沿世界 +Y） */
+  private fitBodyHeight(): void {
+    const { minY, offset } = this.trunkSupport();
+    this.fitGroup.position.y += MATTRESS_THK + 0.012 - (minY - offset);
     this.baseY = this.fitGroup.position.y;
   }
 
@@ -323,6 +400,50 @@ export class Bed3DScene {
     this.breathing = on;
   }
 
+  /** 调试：直接设置某骨骼局部旋转增量（用于摆姿调参） */
+  debugSetBone(name: string, x: number, y: number, z: number): boolean {
+    const bone = this.bones.get(name);
+    const bind = this.bindQuats.get(name);
+    if (!bone || !bind) return false;
+    bone.quaternion.copy(bind);
+    bone.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)));
+    return true;
+  }
+
+  /** 调试：恢复全部骨骼绑定姿态 */
+  debugResetBones(): void {
+    for (const [name, bone] of this.bones) {
+      const bind = this.bindQuats.get(name);
+      if (bind) bone.quaternion.copy(bind);
+    }
+  }
+
+  /** 调试：设置躺平组绕 X 的旋转角（用于确定正确躺平变换） */
+  debugSetRootRotationX(x: number): void {
+    if (this.modelRoot) this.modelRoot.rotation.x = x;
+  }
+
+  /** 调试：返回蒙皮网格应用当前骨架姿势后的世界包围盒（真实渲染范围） */
+  debugMeshWorldBox(): Record<string, number[]> | null {
+    const boxes: THREE.Box3[] = [];
+    this.fitGroup.traverse((obj) => {
+      const skinned = obj as THREE.SkinnedMesh;
+      if (!skinned.isSkinnedMesh) return;
+      skinned.skeleton.update();
+      skinned.computeBoundingBox();
+      const local = skinned.boundingBox;
+      if (!local) return;
+      skinned.updateWorldMatrix(true, false);
+      boxes.push(local.clone().applyMatrix4(skinned.matrixWorld));
+    });
+    if (!boxes.length) return null;
+    const box = boxes.reduce((acc, b) => acc.union(b));
+    return {
+      min: box.min.toArray(),
+      max: box.max.toArray(),
+    };
+  }
+
   /** 调试信息（供自动化验证读取场景真实状态） */
   debugInfo(): Record<string, unknown> {
     const roll = this.rollGroup ? this.rollGroup.rotation.z : 0;
@@ -345,17 +466,20 @@ export class Bed3DScene {
     }
     const joints: Record<string, number[]> = {};
     for (const name of [
-      'neck_joint_2',
-      'leg_joint_R_1',
-      'leg_joint_R_2',
-      'leg_joint_R_3',
-      'leg_joint_L_1',
-      'leg_joint_L_2',
-      'leg_joint_L_3',
-      'arm_joint_R_1',
-      'arm_joint_R_3',
-      'arm_joint_L_1',
-      'arm_joint_L_3',
+      'mixamorigHead',
+      'mixamorigNeck',
+      'mixamorigSpine2',
+      'mixamorigHips',
+      'mixamorigLeftUpLeg',
+      'mixamorigLeftLeg',
+      'mixamorigLeftFoot',
+      'mixamorigRightUpLeg',
+      'mixamorigRightLeg',
+      'mixamorigRightFoot',
+      'mixamorigLeftArm',
+      'mixamorigLeftHand',
+      'mixamorigRightArm',
+      'mixamorigRightHand',
     ]) {
       const bone = this.bones.get(name);
       if (bone) joints[name] = bone.getWorldPosition(new THREE.Vector3()).toArray();
@@ -383,6 +507,8 @@ export class Bed3DScene {
       };
     }
 
+    const trunk = this.trunkSupport();
+
     return {
       webgl: this.renderer !== null,
       camera: this.camera ? this.camera.position.toArray() : null,
@@ -397,6 +523,7 @@ export class Bed3DScene {
       modelBox: modelBox
         ? { min: modelBox.min.toArray(), max: modelBox.max.toArray() }
         : null,
+      trunk: { minY: trunk.minY, offset: trunk.offset, halfDepth: this.halfDepth, halfWidth: this.halfWidth },
       screenBounds,
       joints,
       figureRawBox: this.figureRawBox
@@ -416,20 +543,26 @@ export class Bed3DScene {
     };
   }
 
+  /** 恢复绑定姿态并应用肢体骨骼摆姿（增量叠加在绑定四元数之上，不影响 roll） */
+  private applyLimbPose(posture: PostureId): void {
+    const delta = new THREE.Quaternion();
+    for (const [name, bone] of this.bones) {
+      const bind = this.bindQuats.get(name);
+      if (!bind) continue;
+      bone.quaternion.copy(bind);
+      const rot = LIMB_POSES[posture]?.[name];
+      if (rot) {
+        delta.setFromEuler(new THREE.Euler(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0));
+        bone.quaternion.multiply(delta);
+      }
+    }
+  }
+
   private applyPose(posture: PostureId, immediate: boolean): void {
     this.pose = posture;
     this.targetRoll = POSTURE_ROLL[posture];
-    if (!this.rollGroup) return;
-
-    // 先复位所有肢体骨骼，再应用目标姿态
-    for (const bone of this.bones.values()) bone.rotation.set(0, 0, 0);
-    const limb = LIMB_POSES[posture];
-    for (const [name, rot] of Object.entries(limb)) {
-      const bone = this.bones.get(name);
-      if (!bone) continue;
-      bone.rotation.set(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0);
-    }
-    if (immediate) this.rollGroup.rotation.z = this.targetRoll;
+    this.applyLimbPose(posture);
+    if (immediate && this.rollGroup) this.rollGroup.rotation.z = this.targetRoll;
   }
 
   start(): void {
@@ -445,11 +578,8 @@ export class Bed3DScene {
         if (Math.abs(diff) > 1e-4) {
           this.rollGroup.rotation.z = cur + diff * Math.min(1, 0.1);
         }
-        // 贴床：在世界坐标系中修正高度（fitGroup 不旋转，位置修正始终沿世界 +Y），
-        // 转体过程中身体最低点持续贴着床面（滚动贴床效果）
-        const box = new THREE.Box3().setFromObject(this.fitGroup);
-        this.fitGroup.position.y += MATTRESS_THK + 0.012 - box.min.y;
-        this.baseY = this.fitGroup.position.y;
+        // 躯干贴床（世界坐标系修正，转体过程中躯干支撑面持续贴床）
+        this.fitBodyHeight();
         // 呼吸起伏：整体轻微上下浮动
         if (this.breathing) {
           const amp = 0.012 * (this.pose >= 2 ? 0.5 : 1);

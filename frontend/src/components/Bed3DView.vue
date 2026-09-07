@@ -74,10 +74,11 @@ onMounted(async () => {
   }
   (window as unknown as Record<string, unknown>).__bed3dDebug = () =>
     scene?.debugInfo() ?? null;
+  (window as unknown as Record<string, unknown>).__bed3dScene = scene;
   scene.setFrame(props.frame);
   scene.setPosture(posture.value);
   scene.start();
-  const url = props.modelUrl || `${import.meta.env.BASE_URL}models/RiggedFigure.glb`;
+  const url = props.modelUrl || `${import.meta.env.BASE_URL}models/Soldier.glb`;
   try {
     await scene.loadBody(url);
   } catch (e) {

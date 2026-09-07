@@ -24,6 +24,9 @@ does not change the matrix returned by the algorithm.
 The core enhancement code depends only on NumPy.  The comparison command uses
 Matplotlib when available and otherwise falls back to Pillow.
 
+Joint annotations are used only for offline evaluation and parameter tuning.
+They are not required by the real-time `enhance_pressure(matrix)` API.
+
 ## Python API
 
 ```python
@@ -48,6 +51,32 @@ python -m backend.algorithms.weak_area_enhance.compare `
 
 The loader understands the official dataset's `44 x 24` frames and skips the
 single-value `0/1/2` label rows found in dynamic recordings.
+
+## Evaluate with the joint-position dataset
+
+The joint JSON contains pressure data and 14 labelled points for each record.
+Select a person, action, frame and occurrence to create a comparison with a
+skeleton overlay:
+
+```powershell
+python -m backend.algorithms.weak_area_enhance.compare `
+  "C:\path\to\关节位置.json" `
+  --folder SAI --action 1 --frame 0 --occurrence 0 `
+  --output weak_pressure_joint_SAI_1_0.png
+```
+
+Most person/action/frame combinations occur twice because an augmented
+counterpart is included.  Use `--occurrence 0` for the first record and
+`--occurrence 1` for the second.  The command prints these additional metrics:
+
+- `anatomy_added_ratio`: fraction of added intensity near the labelled body;
+- `outside_added_ratio`: fraction of added intensity outside that corridor;
+- `torso_weak_gain_ratio`: weak-pressure gain around the labelled torso;
+- `leg_weak_gain_ratio`: weak-pressure gain along hip-knee-ankle segments;
+- `leg_continuity_before/after`: visible coverage along labelled leg segments.
+
+These annotations make incorrect background enhancement measurable without
+making the production algorithm depend on manually labelled joints.
 
 ## Dataset check
 

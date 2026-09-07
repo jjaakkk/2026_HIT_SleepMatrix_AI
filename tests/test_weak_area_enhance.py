@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,11 @@ from backend.algorithms.weak_area_enhance.compare import (
     prepare_display_matrices,
 )
 from backend.algorithms.weak_area_enhance.enhance import enhance_pressure
+from backend.algorithms.weak_area_enhance.joint_evaluation import (
+    joint_guided_metrics,
+    load_joint_record,
+    skeleton_mask,
+)
 
 
 class EnhancePressureTests(unittest.TestCase):
@@ -86,6 +92,54 @@ class EnhancePressureTests(unittest.TestCase):
         self.assertEqual(float(original_display[2, 2]), 0.0)
         self.assertEqual(float(enhanced_display[2, 2]), 0.0)
         self.assertEqual(float(original_display[15, 11]), 100.0)
+
+    def test_joint_json_loader_selects_duplicate_occurrence(self) -> None:
+        values = ",".join(["0"] * (44 * 24))
+        keypoints = [[12, 5]] * 14
+        records = [
+            {
+                "folder": "SAI",
+                "action": 1,
+                "frame": 0,
+                "data": values,
+                "kpts": keypoints,
+                "state": [0] * 14,
+            },
+            {
+                "folder": "SAI",
+                "action": 1,
+                "frame": 0,
+                "data": values,
+                "kpts": [[24, 44]] * 14,
+                "state": [0] * 14,
+            },
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "joints.json"
+            path.write_text(json.dumps(records), encoding="utf-8")
+            loaded = load_joint_record(path, "sai", 1, 0, occurrence=1)
+        self.assertEqual(loaded.pressure.shape, (44, 24))
+        self.assertEqual(loaded.keypoints[0], (23.0, 43.0))
+
+    def test_skeleton_mask_contains_labelled_leg_segment(self) -> None:
+        keypoints = [None] * 14
+        keypoints[8] = (8.0, 20.0)
+        keypoints[10] = (8.0, 30.0)
+        mask = skeleton_mask((44, 24), tuple(keypoints), limb_radius=1.0)
+        self.assertTrue(mask[25, 8])
+        self.assertFalse(mask[25, 15])
+
+    def test_joint_metrics_detect_outside_added_intensity(self) -> None:
+        original = np.zeros((44, 24), dtype=np.float32)
+        enhanced = original.copy()
+        keypoints = [None] * 14
+        keypoints[8] = (8.0, 20.0)
+        keypoints[10] = (8.0, 30.0)
+        enhanced[25, 8] = 10.0
+        enhanced[2, 20] = 10.0
+        metrics = joint_guided_metrics(original, enhanced, tuple(keypoints))
+        self.assertAlmostEqual(metrics["outside_added_ratio"], 0.5)
+        self.assertAlmostEqual(metrics["anatomy_added_ratio"], 0.5)
 
 
 if __name__ == "__main__":

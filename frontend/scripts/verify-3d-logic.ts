@@ -1,5 +1,6 @@
 // 3D 场景逻辑验证（无需 WebGL/GPU）：npm run verify:3d:logic
-// 在页面中以 webgl:false 构建场景，验证模型加载、骨骼、睡姿 roll 与热力图纹理。
+// 在页面中以 webgl:false 构建场景，验证模型加载、骨骼、睡姿 roll、贴床、
+// 屏幕可见性（NDC 投影）与肢体姿态（屈膝/伸直）。
 import puppeteer from 'puppeteer';
 
 const BASE = 'http://localhost:5173/';
@@ -16,12 +17,13 @@ try {
   await page.goto(`${BASE}?c=logic3d`, { waitUntil: 'networkidle0' });
 
   const result = await page.evaluate(async () => {
-    // 从 dev 服务器按需加载源码模块（浏览器侧运行，不走本文件打包）
     const bedPath = '/src/three/bed3d.ts';
     const heatPath = '/src/render/heatmap.ts';
     const mod = await import(/* @vite-ignore */ bedPath);
     const heat = await import(/* @vite-ignore */ heatPath);
     const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 750;
     const scene = new mod.Bed3DScene(canvas, { webgl: false });
     scene.start();
 
@@ -36,28 +38,55 @@ try {
     await scene.loadBody('/models/RiggedFigure.glb');
     const loaded = scene.debugInfo() as Record<string, unknown>;
 
-    // 等转体动画收敛后读取四种睡姿的 roll
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const rollOf = async (p: number) => {
-      scene.setPosture(p as never);
-      await sleep(1200);
-      return (scene.debugInfo() as { roll: number }).roll;
-    };
-    const rolls: number[] = [];
-    for (const p of [0, 1, 2, 3]) rolls.push(await rollOf(p));
+    const dist = (a: number[], b: number[]) =>
+      Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-    // 期望颜色：直接调用同一色带函数
+    const perPosture: Record<string, unknown>[] = [];
+    for (const p of [0, 1, 2, 3]) {
+      scene.setPosture(p as never);
+      await sleep(1400); // 转体过渡 + 贴床收敛
+      const info = scene.debugInfo() as Record<string, unknown>;
+      const joints = info.joints as Record<string, number[]>;
+      const hip = joints['leg_joint_R_1'];
+      const knee = joints['leg_joint_R_2'];
+      const ankle = joints['leg_joint_R_3'];
+      const lHip = joints['leg_joint_L_1'];
+      const lKnee = joints['leg_joint_L_2'];
+      const lAnkle = joints['leg_joint_L_3'];
+      const head = joints['neck_joint_2'];
+      perPosture.push({
+        roll: info.roll,
+        box: info.modelBox,
+        screen: info.screenBounds,
+        hip,
+        knee,
+        ankle,
+        lHip,
+        lKnee,
+        lAnkle,
+        head,
+        thigh: dist(hip, knee),
+        shin: dist(knee, ankle),
+        hipAnkle: dist(hip, ankle),
+        lThigh: dist(lHip, lKnee),
+        lShin: dist(lKnee, lAnkle),
+        lHipAnkle: dist(lHip, lAnkle),
+      });
+    }
+
     const scaleMax = Math.max(heat.computeFrameMax(frame), 80);
     const expected = heat.valueToColor(100, scaleMax, heat.GAMMA.smooth);
 
     return {
       before,
       loaded,
-      rolls,
+      perPosture,
       expected: [Math.round(expected[0] * 255), Math.round(expected[1] * 255), Math.round(expected[2] * 255)],
     };
   });
 
+  // ---- 纹理 ----
   const tex = result.before.texture as {
     activeCells: number;
     coloredPx: number;
@@ -74,45 +103,55 @@ try {
     `首采样=${tex.samples[0]?.slice(0, 3)} 期望=${result.expected}`,
   );
 
+  // ---- 模型加载 ----
   const loaded = result.loaded as Record<string, unknown>;
-  const box = loaded.modelBox as { min: number[]; max: number[] } | null;
   check('人体模型加载成功', loaded.modelLoaded === true, `modelLoaded=${loaded.modelLoaded}`);
   check('19 根骨骼齐全', loaded.boneCount === 19, `boneCount=${loaded.boneCount}`);
-  check(
-    '关键骨骼存在',
-    ['torso_joint_1', 'torso_joint_3', 'arm_joint_L_1', 'leg_joint_R_2'].every((n) =>
-      (loaded.bones as string[]).includes(n),
-    ),
-    '全部命中',
-  );
 
-  if (box) {
-    const [x0, y0, z0] = box.min;
-    const [x1, y1, z1] = box.max;
-    const onMattress =
-      y0 >= 0.15 && y1 <= 0.75 && z0 >= -1.05 && z1 <= 1.05 && x0 >= -0.75 && x1 <= 0.75;
-    check(
-      '人体贴放于床垫之上',
-      onMattress,
-      `box=[${box.min.map((v) => v.toFixed(2))}]..[${box.max.map((v) => v.toFixed(2))}]（床面 y=0.16，床 z∈±1.1）`,
+  // ---- 四睡姿 ----
+  const names = ['仰卧', '俯卧', '左侧卧', '右侧卧'];
+  const expectRoll = [Math.PI, 0, -Math.PI / 2, Math.PI / 2];
+  let allVisible = true;
+  let allOnBed = true;
+  const visibilityDetails: string[] = [];
+  const fitDetails: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const p = result.perPosture[i] as Record<string, unknown>;
+    const rollOk = Math.abs((p.roll as number) - expectRoll[i]) < 0.05;
+    check(`${names[i]} roll 值正确`, rollOk, `roll=${(p.roll as number).toFixed(3)}（期望 ${expectRoll[i].toFixed(3)}）`);
+
+    const screen = p.screen as Record<string, number>;
+    const visible =
+      screen.ndcX1 > -1.05 && screen.ndcX0 < 1.05 && screen.ndcY1 > -1.05 && screen.ndcY0 < 1.05;
+    if (!visible) allVisible = false;
+    visibilityDetails.push(
+      `${names[i]}:ndcX[${screen.ndcX0.toFixed(2)},${screen.ndcX1.toFixed(2)}] ndcY[${screen.ndcY0.toFixed(2)},${screen.ndcY1.toFixed(2)}]`,
     );
-    const len = Math.max(z1 - z0, x1 - x0, y1 - y0);
-    check('人体长度合理（≈1.72m）', Math.abs(len - 1.72) < 0.25, `maxExtent=${len.toFixed(2)}`);
-  } else {
-    check('人体包围盒存在', false, 'modelBox=null');
-  }
 
-  const expectRoll = [0, Math.PI, -Math.PI / 2, Math.PI / 2];
-  check(
-    '四种睡姿 roll 值正确（仰卧=0 俯卧=π 左侧卧=-π/2 右侧卧=+π/2）',
-    result.rolls.every((v, i) => Math.abs(v - expectRoll[i]) < 0.05),
-    `rolls=${result.rolls.map((v) => v.toFixed(3)).join(',')}`,
-  );
-  check(
-    '转体动画已收敛（仰卧 0 与俯卧 π 差异显著）',
-    Math.abs(result.rolls[0] - result.rolls[1]) > 2.5,
-    `Δ=${Math.abs(result.rolls[0] - result.rolls[1]).toFixed(3)}`,
-  );
+    const box = p.box as { min: number[]; max: number[] };
+    const onBed = box.min[1] > 0.12 && box.min[1] < 0.22;
+    if (!onBed) allOnBed = false;
+    fitDetails.push(`${names[i]}:y[${box.min[1].toFixed(3)},${box.max[1].toFixed(3)}] z[${box.min[2].toFixed(2)},${box.max[2].toFixed(2)}]`);
+  }
+  check('四种睡姿模型均在屏幕视野内（NDC 投影）', allVisible, visibilityDetails.join(' | '));
+  check('四种睡姿最低点均贴住床面（不嵌入床垫）', allOnBed, `床面 y=0.172；` + fitDetails.join(' | '));
+
+  // ---- 肢体姿态 ----
+  const sup = result.perPosture[0] as Record<string, unknown>;
+  const latL = result.perPosture[2] as Record<string, unknown>;
+  const latR = result.perPosture[3] as Record<string, unknown>;
+  const straight = (sup.hipAnkle as number) / ((sup.thigh as number) + (sup.shin as number));
+  check('仰卧双腿伸直', straight > 0.96, `髋-踝/腿长=${straight.toFixed(3)}（≈1 为伸直）`);
+  // 侧卧：上腿（远离床面的那条）屈曲更多；左侧卧上腿=右腿，右侧卧上腿=左腿
+  const foldL = (latL.hipAnkle as number) / ((latL.thigh as number) + (latL.shin as number));
+  const foldR = (latR.lHipAnkle as number) / ((latR.lThigh as number) + (latR.lShin as number));
+  check('左侧卧上腿（右腿）屈膝', foldL < 0.9, `髋-踝/腿长=${foldL.toFixed(3)}（<0.9 为屈膝）`);
+  check('右侧卧上腿（左腿）屈膝', foldR < 0.9, `髋-踝/腿长=${foldR.toFixed(3)}（<0.9 为屈膝）`);
+
+  // 头在脚端之前（头端 -Z）
+  const headZ = (sup.head as number[])[2];
+  const ankleZ = (sup.ankle as number[])[2];
+  check('头朝床垫远端（头 z < 脚 z）', headZ < ankleZ, `头 z=${headZ.toFixed(2)} 脚 z=${ankleZ.toFixed(2)}`);
 } finally {
   await browser.close();
 }

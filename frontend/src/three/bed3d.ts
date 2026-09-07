@@ -39,13 +39,14 @@ interface BonePose {
 }
 
 /**
- * 绕身体长轴的翻转角（THREE 世界：GLTFLoader 已把模型转为 Y-up，立姿头 +Y、正面 +Z）。
- * 结构：rollGroup（绕世界 Z=床长轴翻转）⊃ modelRoot（绕 X 转 -90° 躺平，头→-Z）。
- * 仰卧=0（正面朝上）、俯卧=π、左侧卧=-π/2（左半身贴床）、右侧卧=+π/2。
+ * 绕身体长轴的翻转角（THREE 世界：模型立姿头 +Y；由骨骼命名与脚趾关节位置推断正面朝 -Z，
+ * 即立姿时左半身 = +X、右半身 = -X）。
+ * 结构：fitGroup（世界轴对齐）⊃ rollGroup（绕世界 Z=床长轴翻转）⊃ modelRoot（绕 X 转 -90° 躺平，头→-Z）。
+ * roll=0 时正面朝下（俯卧）；仰卧=π、左侧卧=-π/2（左半身 +X 贴床）、右侧卧=+π/2。
  */
 const POSTURE_ROLL: Record<PostureId, number> = {
-  0: 0,
-  1: Math.PI,
+  0: Math.PI,
+  1: 0,
   2: -Math.PI / 2,
   3: Math.PI / 2,
 };
@@ -55,18 +56,11 @@ const POSTURE_ROLL: Record<PostureId, number> = {
  * 绕 X 正 = 大腿/手臂向 +Z（前）摆动，绕 X 负 = 向后摆（屈膝/垂臂），绕 Y = 头侧转。
  */
 const LIMB_POSES: Record<PostureId, Record<string, BonePose>> = {
-  // 仰卧：绑定姿势即双臂贴体侧，仅轻微外展
-  0: {
-    arm_joint_R_1: { x: 0.1 },
-    arm_joint_L_1: { x: 0.1 },
-    leg_joint_R_1: { x: -0.06 },
-    leg_joint_L_1: { x: -0.06 },
-  },
-  // 俯卧：头侧转
+  // 仰卧：绑定姿势即双臂贴体侧平躺，无需调整
+  0: {},
+  // 俯卧：仅头侧转（面部朝下时转头更自然）
   1: {
-    neck_joint_2: { y: 0.55 },
-    arm_joint_R_1: { x: 0.15 },
-    arm_joint_L_1: { x: 0.15 },
+    neck_joint_2: { y: 0.6 },
   },
   // 左侧卧：屈髋屈膝（胎儿式）、手臂前收
   2: {
@@ -105,6 +99,8 @@ export class Bed3DScene {
   private canvas2d: HTMLCanvasElement;
   private ctx2d: CanvasRenderingContext2D;
   private texture: THREE.CanvasTexture;
+  /** 世界坐标系对齐的贴床/呼吸组（不旋转，位置修正始终沿世界 +Y） */
+  private fitGroup = new THREE.Group();
   private modelRoot: THREE.Group | null = null;
   private rollGroup: THREE.Group | null = null;
   private bones = new Map<string, THREE.Bone>();
@@ -131,18 +127,19 @@ export class Bed3DScene {
     }
     this.scene.background = new THREE.Color('#0a1016');
 
+    // 相机与控制器不依赖 WebGL（纯数学），无渲染环境也创建以便投影验证
+    this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 60);
+    this.camera.position.set(2.9, 1.9, 3.3);
+
+    this.controls = new OrbitControls(this.camera, canvas);
+    this.controls.target.set(0, 0.35, 0.05);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.minDistance = 1.2;
+    this.controls.maxDistance = 8;
+    this.controls.maxPolarAngle = Math.PI * 0.52;
+
     if (this.renderer) {
-      this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 60);
-      this.camera.position.set(2.9, 1.9, 3.3);
-
-      this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-      this.controls.target.set(0, 0.35, 0.05);
-      this.controls.enableDamping = true;
-      this.controls.dampingFactor = 0.08;
-      this.controls.minDistance = 1.2;
-      this.controls.maxDistance = 8;
-      this.controls.maxPolarAngle = Math.PI * 0.52;
-
       // 灯光：半球环境 + 主方向光（投影）+ 冷色轮廓光
       this.scene.add(new THREE.HemisphereLight(0xdce8f4, 0x0c1520, 1.0));
       const key = new THREE.DirectionalLight(0xffffff, 1.7);
@@ -170,6 +167,7 @@ export class Bed3DScene {
     floor.position.y = -0.002;
     floor.receiveShadow = true;
     this.scene.add(floor);
+    this.scene.add(this.fitGroup);
 
     // 热力图纹理画布（行 0=头端在画布顶部）
     this.canvas2d = document.createElement('canvas');
@@ -270,27 +268,28 @@ export class Bed3DScene {
       if (bone.isBone) this.bones.set(bone.name, bone);
     });
 
-    // rollGroup（绕世界 Z=床长轴翻转）⊃ modelRoot（绕 X 转 -90° 躺平：头→-Z）
+    // fitGroup（世界轴对齐，承载贴床/呼吸位移）⊃ rollGroup（绕世界 Z=床长轴翻转）
+    // ⊃ modelRoot（绕 X 转 -90° 躺平：头→-Z）
     this.rollGroup = new THREE.Group();
     this.modelRoot = new THREE.Group();
     this.modelRoot.rotation.x = -Math.PI / 2;
     this.modelRoot.add(model);
     this.rollGroup.add(this.modelRoot);
-    this.scene.add(this.rollGroup);
+    this.fitGroup.add(this.rollGroup);
 
     this.applyPose(this.pose, true);
     this.fitToMattress();
   }
 
-  /** 初始摆位：水平居中、脚端距床边 3 行、最低点贴住床面 */
+  /** 初始摆位：水平居中、脚端距床边 3 行、最低点贴住床面（世界坐标系） */
   private fitToMattress(): void {
-    if (!this.rollGroup || !this.modelRoot) return;
-    const box = new THREE.Box3().setFromObject(this.rollGroup);
+    if (!this.modelRoot) return;
+    const box = new THREE.Box3().setFromObject(this.fitGroup);
     const footEnd = MATTRESS_LEN / 2 - (3 / ROWS) * MATTRESS_LEN;
     this.modelRoot.position.x -= (box.min.x + box.max.x) / 2;
-    this.modelRoot.position.y += MATTRESS_THK + 0.012 - box.min.y;
     this.modelRoot.position.z += footEnd - box.max.z;
-    this.baseY = this.modelRoot.position.y;
+    this.fitGroup.position.y += MATTRESS_THK + 0.012 - box.min.y;
+    this.baseY = this.fitGroup.position.y;
   }
 
   /** 更新床垫热力图纹理（1056 值，行优先） */
@@ -327,7 +326,7 @@ export class Bed3DScene {
   /** 调试信息（供自动化验证读取场景真实状态） */
   debugInfo(): Record<string, unknown> {
     const roll = this.rollGroup ? this.rollGroup.rotation.z : 0;
-    const modelBox = this.modelRoot ? new THREE.Box3().setFromObject(this.modelRoot) : null;
+    const modelBox = this.modelRoot ? new THREE.Box3().setFromObject(this.fitGroup) : null;
     const image = this.ctx2d.getImageData(0, 0, this.canvas2d.width, this.canvas2d.height);
     let activeCells = 0;
     let coloredPx = 0;
@@ -344,6 +343,46 @@ export class Bed3DScene {
         if (image.data[idx + 3] > 0) activeCells++;
       }
     }
+    const joints: Record<string, number[]> = {};
+    for (const name of [
+      'neck_joint_2',
+      'leg_joint_R_1',
+      'leg_joint_R_2',
+      'leg_joint_R_3',
+      'leg_joint_L_1',
+      'leg_joint_L_2',
+      'leg_joint_L_3',
+      'arm_joint_R_1',
+      'arm_joint_R_3',
+      'arm_joint_L_1',
+      'arm_joint_L_3',
+    ]) {
+      const bone = this.bones.get(name);
+      if (bone) joints[name] = bone.getWorldPosition(new THREE.Vector3()).toArray();
+    }
+
+    // 屏幕投影（NDC）验证可见性：相机数学不依赖渲染器
+    let screenBounds: Record<string, number> | null = null;
+    if (modelBox && this.camera) {
+      this.camera.aspect = (this.canvas.clientWidth || 16) / (this.canvas.clientHeight || 9);
+      this.camera.updateMatrixWorld();
+      this.camera.updateProjectionMatrix();
+      const corners: THREE.Vector3[] = [];
+      for (const x of [modelBox.min.x, modelBox.max.x]) {
+        for (const y of [modelBox.min.y, modelBox.max.y]) {
+          for (const z of [modelBox.min.z, modelBox.max.z]) {
+            corners.push(new THREE.Vector3(x, y, z).project(this.camera));
+          }
+        }
+      }
+      screenBounds = {
+        ndcX0: Math.min(...corners.map((v) => v.x)),
+        ndcX1: Math.max(...corners.map((v) => v.x)),
+        ndcY0: Math.min(...corners.map((v) => v.y)),
+        ndcY1: Math.max(...corners.map((v) => v.y)),
+      };
+    }
+
     return {
       webgl: this.renderer !== null,
       camera: this.camera ? this.camera.position.toArray() : null,
@@ -358,6 +397,8 @@ export class Bed3DScene {
       modelBox: modelBox
         ? { min: modelBox.min.toArray(), max: modelBox.max.toArray() }
         : null,
+      screenBounds,
+      joints,
       figureRawBox: this.figureRawBox
         ? {
             min: this.figureRawBox.min.toArray(),
@@ -404,14 +445,15 @@ export class Bed3DScene {
         if (Math.abs(diff) > 1e-4) {
           this.rollGroup.rotation.z = cur + diff * Math.min(1, 0.1);
         }
-        // 贴床：转体过程中始终保持当前摆姿最低点贴着床面（滚动贴床效果）
-        const box = new THREE.Box3().setFromObject(this.rollGroup);
-        this.modelRoot.position.y += MATTRESS_THK + 0.012 - box.min.y;
-        this.baseY = this.modelRoot.position.y;
+        // 贴床：在世界坐标系中修正高度（fitGroup 不旋转，位置修正始终沿世界 +Y），
+        // 转体过程中身体最低点持续贴着床面（滚动贴床效果）
+        const box = new THREE.Box3().setFromObject(this.fitGroup);
+        this.fitGroup.position.y += MATTRESS_THK + 0.012 - box.min.y;
+        this.baseY = this.fitGroup.position.y;
         // 呼吸起伏：整体轻微上下浮动
         if (this.breathing) {
           const amp = 0.012 * (this.pose >= 2 ? 0.5 : 1);
-          this.modelRoot.position.y = this.baseY + Math.sin(t * 1.7) * amp;
+          this.fitGroup.position.y = this.baseY + Math.sin(t * 1.7) * amp;
         }
       }
       this.controls?.update();
